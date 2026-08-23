@@ -6,7 +6,8 @@ const station = {
   id: "se-1", name: "Sveriges Radio P1", countryCode: "SE", region: "Stockholm",
   tags: ["news"], language: "Swedish", codec: "MP3", bitrate: 128,
   streamUrl: "https://radio.example.se/live.mp3", favicon: null, homepage: null,
-  isVerified: true, clickCount: 3, votes: 1,
+  isVerified: true, clickCount: 3, votes: 1, clickTrend: 0, hasHls: false,
+  lastCheckedAt: null, lastChangedAt: null, coordinates: null,
 };
 
 describe("StationBrowser", () => {

@@ -3,11 +3,12 @@ import { INITIAL_COUNTRY_CODES, normalizeStations, type Station } from "@/lib/st
 type StationQuery = {
   country: (typeof INITIAL_COUNTRY_CODES)[number];
   query?: string;
+  tag?: string;
 };
 
 const API_ROOT = "https://de1.api.radio-browser.info/json/stations/search";
 
-export async function fetchStations({ country, query = "" }: StationQuery): Promise<Station[]> {
+export async function fetchStations({ country, query = "", tag = "" }: StationQuery): Promise<Station[]> {
   const params = new URLSearchParams({
     countrycode: country,
     hidebroken: "true",
@@ -17,6 +18,8 @@ export async function fetchStations({ country, query = "" }: StationQuery): Prom
   });
   const trimmedQuery = query.trim();
   if (trimmedQuery) params.set("name", trimmedQuery);
+  const trimmedTag = tag.trim();
+  if (trimmedTag) params.set("tag", trimmedTag);
 
   const response = await fetch(`${API_ROOT}?${params.toString()}`, {
     headers: { "User-Agent": "StationHarbor/0.1 (+https://github.com/christopherklint97/stationharbor)" },

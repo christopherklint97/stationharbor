@@ -79,6 +79,7 @@ export function StationBrowser() {
     const controller = new AbortController();
     const params = new URLSearchParams({ country });
     if (query.trim()) params.set("q", query.trim());
+    if (category !== "all" && category !== "talk") params.set("tag", category);
 
     fetch(`/api/stations?${params}`, { signal: controller.signal })
       .then(async (response) => {
@@ -93,7 +94,7 @@ export function StationBrowser() {
       .finally(() => { if (!controller.signal.aborted) setIsLoading(false); });
 
     return () => controller.abort();
-  }, [country, query]);
+  }, [country, query, category]);
 
   useEffect(() => {
     if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js");
@@ -144,6 +145,14 @@ export function StationBrowser() {
         <select aria-label="Codec" value={codec} onChange={(event) => setCodec(event.target.value)}><option value="all">All codecs</option>{[...new Set(stations.map((station) => station.codec).filter(Boolean))].map((value) => <option key={value} value={value}>{value}</option>)}</select>
         <select aria-label="Sort stations" value={sort} onChange={(event) => setSort(event.target.value)}><option value="popular">Popular</option><option value="votes">Most voted</option><option value="checked">Recently checked</option><option value="changed">Recently changed</option></select>
         <button aria-pressed={hlsOnly} className="country-chip" type="button" onClick={() => setHlsOnly((current) => !current)}>HLS only</button>
+      </div>
+
+      <div className="active-filters" aria-label="Selected filters">
+        {category !== "all" && <button type="button" onClick={() => setCategory("all")}>{category === "talk" ? "Talk radio" : category} ×</button>}
+        {language !== "all" && <button type="button" onClick={() => setLanguage("all")}>{language} ×</button>}
+        {codec !== "all" && <button type="button" onClick={() => setCodec("all")}>{codec} ×</button>}
+        {hlsOnly && <button type="button" onClick={() => setHlsOnly(false)}>HLS only ×</button>}
+        {sort !== "popular" && <button type="button" onClick={() => setSort("popular")}>Sort: {sort} ×</button>}
       </div>
 
       <div className="station-section" aria-live="polite">
