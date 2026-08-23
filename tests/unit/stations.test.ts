@@ -17,6 +17,12 @@ const rawStations = [
     lastcheckok: 1,
     clickcount: 12,
     votes: 5,
+    clicktrend: 3,
+    hls: 1,
+    lastchecktime_iso8601: "2026-08-23T08:00:00Z",
+    lastchangetime_iso8601: "2026-08-20T08:00:00Z",
+    geo_lat: 59.3293,
+    geo_long: 18.0686,
   },
   {
     stationuuid: "blocked-http",
@@ -52,6 +58,11 @@ describe("normalizeStations", () => {
         tags: ["news", "pop"],
         streamUrl: "https://radio.example.se/live.mp3",
         isVerified: true,
+        hasHls: true,
+        clickTrend: 3,
+        lastCheckedAt: "2026-08-23T08:00:00Z",
+        lastChangedAt: "2026-08-20T08:00:00Z",
+        coordinates: { latitude: 59.3293, longitude: 18.0686 },
       }),
     ]);
   });

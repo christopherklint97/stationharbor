@@ -26,6 +26,10 @@ export function StationBrowser() {
   });
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [category, setCategory] = useState("all");
+  const [language, setLanguage] = useState("all");
+  const [codec, setCodec] = useState("all");
+  const [hlsOnly, setHlsOnly] = useState(false);
+  const [sort, setSort] = useState("popular");
   const [sleepDeadline, setSleepDeadline] = useState<number | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [customMinutes, setCustomMinutes] = useState("");
@@ -33,8 +37,10 @@ export function StationBrowser() {
 
   const displayedStations = stations.filter((station) =>
     (!favoritesOnly || favorites.some((favorite) => favorite.id === station.id)) &&
+    (language === "all" || station.language.toLowerCase().includes(language)) &&
+    (codec === "all" || station.codec === codec) && (!hlsOnly || station.hasHls) &&
     (category === "all" || (category === "talk" ? station.tags.some((tag) => tag.includes("talk") || tag.includes("speech")) : station.tags.includes(category))),
-  );
+  ).sort((a, b) => sort === "votes" ? b.votes - a.votes : sort === "checked" ? (b.lastCheckedAt ?? "").localeCompare(a.lastCheckedAt ?? "") : sort === "changed" ? (b.lastChangedAt ?? "").localeCompare(a.lastChangedAt ?? "") : b.clickCount - a.clickCount);
 
   function favoriteStation(station: Station) {
     setFavorites((current) => {
@@ -133,6 +139,13 @@ export function StationBrowser() {
         {[['all', 'All'], ['talk', 'Talk radio'], ['news', 'News'], ['music', 'Music'], ['sports', 'Sports'], ['jazz', 'Jazz'], ['rock', 'Rock']].map(([value, label]) => <button aria-pressed={category === value} className="country-chip" key={value} onClick={() => setCategory(value)} type="button">{label}</button>)}
       </div>
 
+      <div className="metadata-filters" aria-label="Advanced filters">
+        <select aria-label="Language" value={language} onChange={(event) => setLanguage(event.target.value)}><option value="all">All languages</option>{[...new Set(stations.map((station) => station.language.toLowerCase()).filter(Boolean))].map((value) => <option key={value} value={value}>{value}</option>)}</select>
+        <select aria-label="Codec" value={codec} onChange={(event) => setCodec(event.target.value)}><option value="all">All codecs</option>{[...new Set(stations.map((station) => station.codec).filter(Boolean))].map((value) => <option key={value} value={value}>{value}</option>)}</select>
+        <select aria-label="Sort stations" value={sort} onChange={(event) => setSort(event.target.value)}><option value="popular">Popular</option><option value="votes">Most voted</option><option value="checked">Recently checked</option><option value="changed">Recently changed</option></select>
+        <button aria-pressed={hlsOnly} className="country-chip" type="button" onClick={() => setHlsOnly((current) => !current)}>HLS only</button>
+      </div>
+
       <div className="station-section" aria-live="polite">
         <div className="section-heading"><div><p className="eyebrow">START HERE</p><h2>{favoritesOnly ? "Favorites" : "Popular stations"}</h2></div><button className="quiet-button" onClick={() => setFavoritesOnly((current) => !current)} type="button">{favoritesOnly ? "All stations" : `Favorites (${favorites.length})`}</button></div>
         {isLoading && <div className="loading-card" role="status">Loading live stations…</div>}
@@ -141,7 +154,7 @@ export function StationBrowser() {
         <div className="station-list">
           {displayedStations.map((station) => (
             <article className="station-card" key={station.id}>
-              <div className="station-meta"><strong>{station.name}</strong><span>{[station.region, station.countryCode, station.tags.slice(0, 2).join(" · ")].filter(Boolean).join(" · ")}</span></div>
+              <div className="station-meta"><strong>{station.name}</strong><span>{[station.region, station.countryCode, station.language, station.codec, `${station.bitrate} kbps`, station.hasHls ? "HLS" : ""].filter(Boolean).join(" · ")}</span><span>{station.tags.slice(0, 3).join(" · ")} · {station.votes} votes</span>{station.homepage && <a href={station.homepage} rel="noreferrer" target="_blank">Station website</a>}{station.coordinates && <a href={`https://www.openstreetmap.org/?mlat=${station.coordinates.latitude}&mlon=${station.coordinates.longitude}`} rel="noreferrer" target="_blank">View location</a>}</div>
               <button className="favorite-button" type="button" aria-label={`${favorites.some((favorite) => favorite.id === station.id) ? "Remove" : "Add"} ${station.name} ${favorites.some((favorite) => favorite.id === station.id) ? "from" : "to"} favorites`} onClick={() => favoriteStation(station)}>★</button>
               <button className="play-button" type="button" aria-label={`Play ${station.name}`} onClick={() => playStation(station)}>▶</button>
             </article>

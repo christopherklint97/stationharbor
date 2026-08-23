@@ -18,6 +18,12 @@ const rawStationSchema = z.object({
   lastcheckok: z.number().optional().default(0),
   clickcount: z.number().optional().default(0),
   votes: z.number().optional().default(0),
+  clicktrend: z.number().optional().default(0),
+  hls: z.number().optional().default(0),
+  lastchecktime_iso8601: z.string().optional().default(""),
+  lastchangetime_iso8601: z.string().optional().default(""),
+  geo_lat: z.number().optional().nullable().default(null),
+  geo_long: z.number().optional().nullable().default(null),
 });
 
 export type Station = {
@@ -35,6 +41,11 @@ export type Station = {
   isVerified: boolean;
   clickCount: number;
   votes: number;
+  clickTrend: number;
+  hasHls: boolean;
+  lastCheckedAt: string | null;
+  lastChangedAt: string | null;
+  coordinates: { latitude: number; longitude: number } | null;
 };
 
 function safeHttpsUrl(value: string): string | null {
@@ -83,6 +94,11 @@ export function normalizeStations(rawStations: unknown[]): Station[] {
       isVerified: true,
       clickCount: Math.max(0, raw.clickcount),
       votes: Math.max(0, raw.votes),
+      clickTrend: raw.clicktrend,
+      hasHls: raw.hls === 1,
+      lastCheckedAt: raw.lastchecktime_iso8601 || null,
+      lastChangedAt: raw.lastchangetime_iso8601 || null,
+      coordinates: raw.geo_lat !== null && raw.geo_long !== null ? { latitude: raw.geo_lat, longitude: raw.geo_long } : null,
     });
   }
 
