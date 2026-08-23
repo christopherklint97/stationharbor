@@ -136,8 +136,8 @@ export function StationBrowser() {
           </button>
         ))}
       </div>
-      <div className="country-list" aria-label="Category filter">
-        {[['all', 'All'], ['talk', 'Talk radio'], ['news', 'News'], ['music', 'Music'], ['sports', 'Sports'], ['jazz', 'Jazz'], ['rock', 'Rock']].map(([value, label]) => <button aria-pressed={category === value} className="country-chip" key={value} onClick={() => setCategory(value)} type="button">{label}</button>)}
+      <div className="metadata-filters" aria-label="Category filter">
+        <select aria-label="Category" value={category} onChange={(event) => setCategory(event.target.value)}><option value="all">All categories</option><option value="talk">Talk radio</option><option value="news">News</option><option value="music">Music</option><option value="sports">Sports</option><option value="jazz">Jazz</option><option value="rock">Rock</option></select>
       </div>
 
       <div className="metadata-filters" aria-label="Advanced filters">
