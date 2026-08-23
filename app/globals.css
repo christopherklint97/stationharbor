@@ -63,6 +63,13 @@ h2 { font-size: 21px; letter-spacing: -.04em; margin: 0; }
 .player-actions { display: flex; align-items: center; gap: 18px; }
 .player-main-button { width: 74px; height: 74px; border: 0; border-radius: 50%; background: var(--lime); color: #1a1c16; font-size: 25px; }
 .player-screen .timer-controls { max-width: min(100%, 540px); }
+.mini-player { position: fixed; z-index: 15; bottom: 0; left: 0; width: 100%; min-height: 76px; display: flex; align-items: center; gap: 12px; padding: 10px max(18px, calc((100vw - 744px) / 2)); border: 0; background: rgba(20, 21, 19, .97); border-top: 1px solid var(--line); color: var(--ink); text-align: left; }
+.mini-art { display: grid; flex: 0 0 48px; width: 48px; height: 48px; place-items: center; overflow: hidden; border-radius: 10px; background: #2b3023; color: var(--lime); font-size: 22px; }
+.mini-art img { width: 100%; height: 100%; object-fit: cover; }
+.mini-copy { display: grid; min-width: 0; gap: 3px; flex: 1; }
+.mini-copy strong, .mini-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-copy small { color: var(--muted); }
+.mini-open { color: var(--lime); font-size: 22px; }
 .play-button { width: 48px; height: 48px; border: 0; border-radius: 50%; background: var(--lime); color: #1a1c16; font-size: 16px; }
 .favorite-button { width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 50%; background: transparent; color: var(--lime); font-size: 18px; }
 .timer-controls { display: flex; gap: 5px; max-width: 230px; overflow-x: auto; }

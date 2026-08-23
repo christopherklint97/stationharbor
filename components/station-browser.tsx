@@ -20,6 +20,7 @@ export function StationBrowser() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
+  const [isPlayerOpen, setIsPlayerOpen] = useState(false);
   const [favorites, setFavorites] = useState<Station[]>(() => {
     if (typeof window === "undefined") return [];
     try { return JSON.parse(localStorage.getItem("stationharbor:favorites") ?? "[]") as Station[]; } catch { return []; }
@@ -61,6 +62,7 @@ export function StationBrowser() {
     const audio = audioRef.current;
     if (!audio) return;
     setSelectedStation(station);
+    setIsPlayerOpen(true);
     document.title = `${station.name} — StationHarbor`;
     if ("mediaSession" in navigator) {
       navigator.mediaSession.metadata = new MediaMetadata({ title: station.name, artist: `${station.countryCode} live radio`, album: station.tags.join(" · "), artwork: station.favicon ? [{ src: station.favicon }] : [] });
@@ -171,9 +173,9 @@ export function StationBrowser() {
         </div>
       </div>
       <audio ref={audioRef} preload="none" playsInline />
-      {selectedStation && (
+      {selectedStation && isPlayerOpen && (
         <div className="player-screen" role="dialog" aria-modal="true" aria-label="Now playing">
-          <button className="player-close" type="button" aria-label="Close now playing" onClick={() => setSelectedStation(null)}>⌄</button>
+          <button className="player-close" type="button" aria-label="Close now playing" onClick={() => setIsPlayerOpen(false)}>⌄</button>
           <div className="player-cover">{selectedStation.favicon ? <img src={selectedStation.favicon} alt="" /> : "♫"}</div>
           <p className="eyebrow">NOW PLAYING</p>
           <h2>{selectedStation.name}</h2>
@@ -183,6 +185,13 @@ export function StationBrowser() {
           <div className="timer-controls" aria-label="Sleep timer">{[5, 10, 15, 30, 45, 60].map((minutes) => <button className="quiet-button" key={minutes} type="button" onClick={() => startSleepTimer(minutes)}>{minutes}m</button>)}<input aria-label="Custom sleep timer minutes" inputMode="numeric" min="1" onChange={(event) => setCustomMinutes(event.target.value)} placeholder="Custom" type="number" value={customMinutes} /><button className="quiet-button" type="button" onClick={() => { const minutes = Number(customMinutes); if (minutes > 0) startSleepTimer(minutes); }}>Set</button></div>
           {sleepDeadline && <p className="sleep-status">Sleep timer: {Math.ceil(secondsLeft / 60)} min remaining</p>}
         </div>
+      )}
+      {selectedStation && !isPlayerOpen && (
+        <button className="mini-player" type="button" aria-label="Open now playing" onClick={() => setIsPlayerOpen(true)}>
+          <span className="mini-art">{selectedStation.favicon ? <img src={selectedStation.favicon} alt="" /> : "♫"}</span>
+          <span className="mini-copy"><strong>{selectedStation.name}</strong><small>{selectedStation.tags.slice(0, 2).join(" · ") || "Live radio"}</small></span>
+          <span className="mini-open">⌃</span>
+        </button>
       )}
     </section>
   );
