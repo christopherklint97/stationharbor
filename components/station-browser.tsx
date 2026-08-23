@@ -21,6 +21,7 @@ export function StationBrowser() {
   const [error, setError] = useState("");
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
+  const [detailStation, setDetailStation] = useState<Station | null>(null);
   const [favorites, setFavorites] = useState<Station[]>(() => {
     if (typeof window === "undefined") return [];
     try { return JSON.parse(localStorage.getItem("stationharbor:favorites") ?? "[]") as Station[]; } catch { return []; }
@@ -166,7 +167,8 @@ export function StationBrowser() {
         <div className="station-list">
           {displayedStations.slice(0, visibleCount).map((station) => (
             <article className="station-card" key={station.id}>
-              <div className="station-meta"><strong>{station.name}</strong><span>{[station.region, station.countryCode, station.language, station.codec, `${station.bitrate} kbps`, station.hasHls ? "HLS" : ""].filter(Boolean).join(" · ")}</span><span>{station.tags.slice(0, 3).join(" · ")} · {station.votes} votes</span>{station.homepage && <a href={station.homepage} rel="noreferrer" target="_blank">Station website</a>}{station.coordinates && <a href={`https://www.openstreetmap.org/?mlat=${station.coordinates.latitude}&mlon=${station.coordinates.longitude}`} rel="noreferrer" target="_blank">View location</a>}</div>
+              <div className="station-meta"><strong>{station.name}</strong><span>{[station.region, station.countryCode, station.tags.slice(0, 2).join(" · ")].filter(Boolean).join(" · ")}</span></div>
+              <button className="details-button" type="button" aria-label={`Details ${station.name}`} onClick={() => setDetailStation(station)}>i</button>
               <button aria-pressed={favorites.some((favorite) => favorite.id === station.id)} className={`favorite-button ${favorites.some((favorite) => favorite.id === station.id) ? "is-favorite" : ""}`} type="button" aria-label={`${favorites.some((favorite) => favorite.id === station.id) ? "Remove" : "Add"} ${station.name} ${favorites.some((favorite) => favorite.id === station.id) ? "from" : "to"} favorites`} onClick={() => favoriteStation(station)}>{favorites.some((favorite) => favorite.id === station.id) ? "★" : "☆"}</button>
               <button className="play-button" type="button" aria-label={`Play ${station.name}`} onClick={() => playStation(station)}>▶</button>
             </article>
@@ -175,6 +177,7 @@ export function StationBrowser() {
         {displayedStations.length > visibleCount && <button className="load-more" type="button" onClick={() => setVisibleCount((count) => count + 50)}>Show 50 more stations</button>}
       </div>
       <audio ref={audioRef} preload="none" playsInline />
+      {detailStation && <div className="details-sheet" role="dialog" aria-modal="true" aria-label="Station details"><button className="player-close" type="button" aria-label="Close station details" onClick={() => setDetailStation(null)}>×</button><h2>{detailStation.name}</h2><p>{detailStation.tags.join(" · ") || "Live radio"}</p><dl><dt>Language</dt><dd>{detailStation.language || "Unknown"}</dd><dt>Stream</dt><dd>{detailStation.codec} · {detailStation.bitrate} kbps{detailStation.hasHls ? " · HLS" : ""}</dd><dt>Votes</dt><dd>{detailStation.votes}</dd><dt>Last checked</dt><dd>{detailStation.lastCheckedAt ? new Date(detailStation.lastCheckedAt).toLocaleString() : "Unknown"}</dd></dl>{detailStation.homepage && <a href={detailStation.homepage} rel="noreferrer" target="_blank">Open station website</a>}</div>}
       {selectedStation && isPlayerOpen && (
         <div className="player-screen" role="dialog" aria-modal="true" aria-label="Now playing">
           <button className="player-close" type="button" aria-label="Close now playing" onClick={() => setIsPlayerOpen(false)}>⌄</button>

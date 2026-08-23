@@ -20,6 +20,14 @@ describe("StationBrowser", () => {
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/stations?country=SE", expect.any(Object)));
   });
 
+  it("opens station details without starting audio", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ stations: [station] }))));
+    render(<StationBrowser />);
+    fireEvent.click(await screen.findByRole("button", { name: "Details Sveriges Radio P1" }));
+    expect(screen.getByRole("dialog", { name: "Station details" })).toBeInTheDocument();
+    expect(screen.getByText(/128/)).toBeInTheDocument();
+  });
+
   it("visibly marks a favorite station after toggle", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ stations: [station] }))));
     render(<StationBrowser />);
