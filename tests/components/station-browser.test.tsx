@@ -20,6 +20,14 @@ describe("StationBrowser", () => {
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/stations?country=SE", expect.any(Object)));
   });
 
+  it("visibly marks a favorite station after toggle", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ stations: [station] }))));
+    render(<StationBrowser />);
+    const favorite = await screen.findByRole("button", { name: "Add Sveriges Radio P1 to favorites" });
+    fireEvent.click(favorite);
+    expect(screen.getByRole("button", { name: "Remove Sveriges Radio P1 from favorites" })).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("starts native audio after user presses a station play button", async () => {
     const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ stations: [station] }))));

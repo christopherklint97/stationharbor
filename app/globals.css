@@ -45,7 +45,9 @@ h2 { font-size: 21px; letter-spacing: -.04em; margin: 0; }
 .station-section { padding-top: 32px; }
 .loading-card { margin-top: 16px; padding: 24px; min-height: 102px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); color: var(--muted); display: flex; align-items: center; }
 .station-list { display: grid; gap: 10px; margin-top: 16px; }
-.station-card { display: flex; align-items: center; gap: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
+.load-more { width: 100%; min-height: 48px; margin-top: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--lime); font-weight: 700; }
+.station-card { display: grid; grid-template-columns: minmax(0, 1fr) 48px 48px; align-items: center; gap: 10px; min-height: 112px; padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
+.station-card .favorite-button, .station-card .play-button { width: 48px; height: 48px; justify-self: end; }
 .station-meta { min-width: 0; display: grid; gap: 4px; margin-right: auto; }
 .station-meta strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .station-meta span { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -71,7 +73,8 @@ h2 { font-size: 21px; letter-spacing: -.04em; margin: 0; }
 .mini-copy small { color: var(--muted); }
 .mini-open { color: var(--lime); font-size: 22px; }
 .play-button { width: 48px; height: 48px; border: 0; border-radius: 50%; background: var(--lime); color: #1a1c16; font-size: 16px; }
-.favorite-button { width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 50%; background: transparent; color: var(--lime); font-size: 18px; }
+.favorite-button { width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 50%; background: transparent; color: var(--muted); font-size: 23px; }
+.favorite-button.is-favorite { border-color: var(--lime); background: var(--lime); color: #182012; box-shadow: 0 0 0 3px #dcff7230; }
 .timer-controls { display: flex; gap: 5px; max-width: 230px; overflow-x: auto; }
 .timer-controls .quiet-button { min-height: 36px; padding: 0 9px; font-size: 12px; }
 .timer-controls input { width: 68px; min-height: 36px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink); padding: 0 9px; }
