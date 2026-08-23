@@ -25,12 +25,16 @@ export function StationBrowser() {
     try { return JSON.parse(localStorage.getItem("stationharbor:favorites") ?? "[]") as Station[]; } catch { return []; }
   });
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [category, setCategory] = useState("all");
   const [sleepDeadline, setSleepDeadline] = useState<number | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [customMinutes, setCustomMinutes] = useState("");
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  const displayedStations = favoritesOnly ? stations.filter((station) => favorites.some((favorite) => favorite.id === station.id)) : stations;
+  const displayedStations = stations.filter((station) =>
+    (!favoritesOnly || favorites.some((favorite) => favorite.id === station.id)) &&
+    (category === "all" || (category === "talk" ? station.tags.some((tag) => tag.includes("talk") || tag.includes("speech")) : station.tags.includes(category))),
+  );
 
   function favoriteStation(station: Station) {
     setFavorites((current) => {
@@ -125,6 +129,9 @@ export function StationBrowser() {
           </button>
         ))}
       </div>
+      <div className="country-list" aria-label="Category filter">
+        {[['all', 'All'], ['talk', 'Talk radio'], ['news', 'News'], ['music', 'Music'], ['sports', 'Sports'], ['jazz', 'Jazz'], ['rock', 'Rock']].map(([value, label]) => <button aria-pressed={category === value} className="country-chip" key={value} onClick={() => setCategory(value)} type="button">{label}</button>)}
+      </div>
 
       <div className="station-section" aria-live="polite">
         <div className="section-heading"><div><p className="eyebrow">START HERE</p><h2>{favoritesOnly ? "Favorites" : "Popular stations"}</h2></div><button className="quiet-button" onClick={() => setFavoritesOnly((current) => !current)} type="button">{favoritesOnly ? "All stations" : `Favorites (${favorites.length})`}</button></div>
@@ -143,12 +150,17 @@ export function StationBrowser() {
       </div>
       <audio ref={audioRef} preload="none" playsInline />
       {selectedStation && (
-        <aside className="player" aria-label="Player">
-          <div className="player-art" aria-hidden="true">{selectedStation.favicon ? <img src={selectedStation.favicon} alt="" /> : "♫"}</div>
-          <div className="player-copy"><strong>{selectedStation.name}</strong><span>{selectedStation.tags.length ? selectedStation.tags.join(" · ") : `Live radio · ${selectedStation.countryCode}`}{sleepDeadline ? ` · sleep ${Math.ceil(secondsLeft / 60)}m` : ""}</span><span className="timeline-note">Live timeline available only when station provides programme metadata.</span></div>
+        <div className="player-screen" role="dialog" aria-modal="true" aria-label="Now playing">
+          <button className="player-close" type="button" aria-label="Close now playing" onClick={() => setSelectedStation(null)}>⌄</button>
+          <div className="player-cover">{selectedStation.favicon ? <img src={selectedStation.favicon} alt="" /> : "♫"}</div>
+          <p className="eyebrow">NOW PLAYING</p>
+          <h2>{selectedStation.name}</h2>
+          <p className="player-description">{selectedStation.tags.length ? selectedStation.tags.join(" · ") : `Live radio · ${selectedStation.countryCode}`} · {selectedStation.codec} · {selectedStation.bitrate} kbps</p>
+          <p className="timeline-note">Live timeline appears when broadcaster publishes programme metadata.</p>
+          <div className="player-actions"><button className="favorite-button" type="button" aria-label="Favorite current station" onClick={() => favoriteStation(selectedStation)}>★</button><button className="player-main-button" type="button" aria-label={`Pause ${selectedStation.name}`} onClick={() => audioRef.current?.pause()}>Ⅱ</button></div>
           <div className="timer-controls" aria-label="Sleep timer">{[5, 10, 15, 30, 45, 60].map((minutes) => <button className="quiet-button" key={minutes} type="button" onClick={() => startSleepTimer(minutes)}>{minutes}m</button>)}<input aria-label="Custom sleep timer minutes" inputMode="numeric" min="1" onChange={(event) => setCustomMinutes(event.target.value)} placeholder="Custom" type="number" value={customMinutes} /><button className="quiet-button" type="button" onClick={() => { const minutes = Number(customMinutes); if (minutes > 0) startSleepTimer(minutes); }}>Set</button></div>
-          <button className="play-button" type="button" aria-label={`Pause ${selectedStation.name}`} onClick={() => audioRef.current?.pause()}>Ⅱ</button>
-        </aside>
+          {sleepDeadline && <p className="sleep-status">Sleep timer: {Math.ceil(secondsLeft / 60)} min remaining</p>}
+        </div>
       )}
     </section>
   );

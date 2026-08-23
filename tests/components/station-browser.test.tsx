@@ -26,6 +26,7 @@ describe("StationBrowser", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Play Sveriges Radio P1" }));
     expect(play).toHaveBeenCalledOnce();
+    expect(screen.getByRole("dialog", { name: "Now playing" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Pause Sveriges Radio P1" })).toBeInTheDocument();
   });
 });
