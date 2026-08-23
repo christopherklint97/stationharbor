@@ -57,5 +57,8 @@ h2 { font-size: 21px; letter-spacing: -.04em; margin: 0; }
 .timeline-note { display: none; }
 .play-button { width: 48px; height: 48px; border: 0; border-radius: 50%; background: var(--lime); color: #1a1c16; font-size: 16px; }
 .favorite-button { width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 50%; background: transparent; color: var(--lime); font-size: 18px; }
+.timer-controls { display: flex; gap: 5px; max-width: 230px; overflow-x: auto; }
+.timer-controls .quiet-button { min-height: 36px; padding: 0 9px; font-size: 12px; }
+.timer-controls input { width: 68px; min-height: 36px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink); padding: 0 9px; }
 
 @media (min-width: 700px) { .shell { padding-inline: 34px; } .hero { padding-top: 92px; } }

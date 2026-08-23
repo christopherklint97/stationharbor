@@ -27,6 +27,7 @@ export function StationBrowser() {
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [sleepDeadline, setSleepDeadline] = useState<number | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(0);
+  const [customMinutes, setCustomMinutes] = useState("");
   const audioRef = useRef<HTMLAudioElement>(null);
 
   const displayedStations = favoritesOnly ? stations.filter((station) => favorites.some((favorite) => favorite.id === station.id)) : stations;
@@ -40,6 +41,7 @@ export function StationBrowser() {
   }
 
   function startSleepTimer(minutes: number) {
+    // eslint-disable-next-line react-hooks/purity -- invoked only by an explicit user action.
     const deadline = Date.now() + minutes * 60_000;
     setSleepDeadline(deadline);
     setSecondsLeft(minutes * 60);
@@ -144,7 +146,7 @@ export function StationBrowser() {
         <aside className="player" aria-label="Player">
           <div className="player-art" aria-hidden="true">{selectedStation.favicon ? <img src={selectedStation.favicon} alt="" /> : "♫"}</div>
           <div className="player-copy"><strong>{selectedStation.name}</strong><span>{selectedStation.tags.length ? selectedStation.tags.join(" · ") : `Live radio · ${selectedStation.countryCode}`}{sleepDeadline ? ` · sleep ${Math.ceil(secondsLeft / 60)}m` : ""}</span><span className="timeline-note">Live timeline available only when station provides programme metadata.</span></div>
-          <button className="quiet-button" type="button" aria-label="Set 30 minute sleep timer" onClick={() => startSleepTimer(30)}>30m</button>
+          <div className="timer-controls" aria-label="Sleep timer">{[5, 10, 15, 30, 45, 60].map((minutes) => <button className="quiet-button" key={minutes} type="button" onClick={() => startSleepTimer(minutes)}>{minutes}m</button>)}<input aria-label="Custom sleep timer minutes" inputMode="numeric" min="1" onChange={(event) => setCustomMinutes(event.target.value)} placeholder="Custom" type="number" value={customMinutes} /><button className="quiet-button" type="button" onClick={() => { const minutes = Number(customMinutes); if (minutes > 0) startSleepTimer(minutes); }}>Set</button></div>
           <button className="play-button" type="button" aria-label={`Pause ${selectedStation.name}`} onClick={() => audioRef.current?.pause()}>Ⅱ</button>
         </aside>
       )}
