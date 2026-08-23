@@ -61,7 +61,7 @@ export function StationBrowser() {
   }
 
   async function playStation(station: Station) {
-    if (!station.isPlayable) { setError(`${station.name}: ${station.availabilityReason ?? "stream unavailable"}.`); return; }
+    if (!station.isVerified) { setError(`${station.name}: ${station.availabilityReason ?? "stream unavailable"}.`); return; }
     const audio = audioRef.current;
     if (!audio) return;
     setSelectedStation(station);
@@ -72,7 +72,7 @@ export function StationBrowser() {
       navigator.mediaSession.setActionHandler("play", () => { void audio.play(); });
       navigator.mediaSession.setActionHandler("pause", () => audio.pause());
     }
-    audio.src = station.streamUrl;
+    audio.src = station.streamUrl.startsWith("http:") ? `/api/relay?url=${encodeURIComponent(station.streamUrl)}` : station.streamUrl;
     try {
       await audio.play();
     } catch {
@@ -168,10 +168,10 @@ export function StationBrowser() {
         <div className="station-list">
           {displayedStations.slice(0, visibleCount).map((station) => (
             <article className="station-card" key={station.id}>
-              <div className="station-meta"><strong>{station.name}</strong><span>{[station.region, station.countryCode, station.tags.slice(0, 2).join(" · ")].filter(Boolean).join(" · ")}</span>{!station.isPlayable && <small className="unavailable">Unavailable: {station.availabilityReason}</small>}</div>
+              <div className="station-meta"><strong>{station.name}</strong><span>{[station.region, station.countryCode, station.tags.slice(0, 2).join(" · ")].filter(Boolean).join(" · ")}</span>{station.streamUrl.startsWith("http:") && station.isVerified && <small className="relay-note">HTTP stream — plays via local relay</small>}{!station.isVerified && <small className="unavailable">Unavailable: {station.availabilityReason}</small>}</div>
               <button className="details-button" type="button" aria-label={`Details ${station.name}`} onClick={() => setDetailStation(station)}>i</button>
               <button aria-pressed={favorites.some((favorite) => favorite.id === station.id)} className={`favorite-button ${favorites.some((favorite) => favorite.id === station.id) ? "is-favorite" : ""}`} type="button" aria-label={`${favorites.some((favorite) => favorite.id === station.id) ? "Remove" : "Add"} ${station.name} ${favorites.some((favorite) => favorite.id === station.id) ? "from" : "to"} favorites`} onClick={() => favoriteStation(station)}>{favorites.some((favorite) => favorite.id === station.id) ? "★" : "☆"}</button>
-              <button className="play-button" disabled={!station.isPlayable} type="button" aria-label={station.isPlayable ? `Play ${station.name}` : `${station.name} unavailable`} onClick={() => playStation(station)}>▶</button>
+              <button className="play-button" disabled={!station.isVerified} type="button" aria-label={station.isVerified ? `Play ${station.name}` : `${station.name} unavailable`} onClick={() => playStation(station)}>▶</button>
             </article>
           ))}
         </div>
