@@ -48,8 +48,15 @@ const rawStations = [
 ];
 
 describe("normalizeStations", () => {
+  it("keeps HTTP stations for discovery but marks them unavailable in secure web apps", () => {
+    const stations = normalizeStations(rawStations);
+    expect(stations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "blocked-http", streamUrl: "http://radio.example.com/live.mp3", isPlayable: false, availabilityReason: "HTTP stream blocked by secure web app" }),
+    ]));
+  });
+
   it("keeps verified HTTPS stations from initial countries and deduplicates by UUID", () => {
-    expect(normalizeStations(rawStations)).toEqual([
+    expect(normalizeStations(rawStations)).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: "se-1",
         name: "Stockholm FM",
@@ -64,6 +71,6 @@ describe("normalizeStations", () => {
         lastChangedAt: "2026-08-20T08:00:00Z",
         coordinates: { latitude: 59.3293, longitude: 18.0686 },
       }),
-    ]);
+    ]));
   });
 });

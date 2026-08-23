@@ -39,6 +39,8 @@ export type Station = {
   favicon: string | null;
   homepage: string | null;
   isVerified: boolean;
+  isPlayable: boolean;
+  availabilityReason: string | null;
   clickCount: number;
   votes: number;
   clickTrend: number;
@@ -47,6 +49,15 @@ export type Station = {
   lastChangedAt: string | null;
   coordinates: { latitude: number; longitude: number } | null;
 };
+
+function safeStreamUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    return ["https:", "http:"].includes(url.protocol) && !url.username && !url.password ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
 
 function safeHttpsUrl(value: string): string | null {
   try {
@@ -75,8 +86,8 @@ export function normalizeStations(rawStations: unknown[]): Station[] {
 
     const raw = parsed.data;
     const countryCode = raw.countrycode.trim().toUpperCase();
-    const streamUrl = safeHttpsUrl(raw.url_resolved);
-    if (!INITIAL_COUNTRY_CODES.includes(countryCode as InitialCountryCode) || !streamUrl || !raw.lastcheckok || seen.has(raw.stationuuid)) continue;
+    const streamUrl = safeStreamUrl(raw.url_resolved);
+    if (!INITIAL_COUNTRY_CODES.includes(countryCode as InitialCountryCode) || !streamUrl || seen.has(raw.stationuuid)) continue;
 
     seen.add(raw.stationuuid);
     stations.push({
@@ -91,7 +102,9 @@ export function normalizeStations(rawStations: unknown[]): Station[] {
       streamUrl,
       favicon: optionalHttpsUrl(raw.favicon),
       homepage: optionalHttpsUrl(raw.homepage),
-      isVerified: true,
+      isVerified: Boolean(raw.lastcheckok),
+      isPlayable: streamUrl.startsWith("https:") && Boolean(raw.lastcheckok),
+      availabilityReason: !raw.lastcheckok ? "Stream has failed recent health checks" : streamUrl.startsWith("http:") ? "HTTP stream blocked by secure web app" : null,
       clickCount: Math.max(0, raw.clickcount),
       votes: Math.max(0, raw.votes),
       clickTrend: raw.clicktrend,
@@ -102,5 +115,5 @@ export function normalizeStations(rawStations: unknown[]): Station[] {
     });
   }
 
-  return stations.sort((a, b) => b.clickCount - a.clickCount || b.votes - a.votes || a.name.localeCompare(b.name));
+  return stations.sort((a, b) => Number(b.isPlayable) - Number(a.isPlayable) || b.clickCount - a.clickCount || b.votes - a.votes || a.name.localeCompare(b.name));
 }
