@@ -50,9 +50,12 @@ h2 { font-size: 21px; letter-spacing: -.04em; margin: 0; }
 .station-meta strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .station-meta span { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .player { position: fixed; bottom: 0; left: 0; right: 0; min-height: 82px; padding: 12px max(18px, calc((100vw - 744px) / 2)); background: rgba(20, 21, 19, .94); border-top: 1px solid var(--line); backdrop-filter: blur(16px); }
-.player-art { width: 48px; height: 48px; border-radius: 12px; display: grid; place-items: center; background: #2b3023; color: var(--lime); font-size: 22px; }
+.player-art { width: 48px; height: 48px; overflow: hidden; border-radius: 12px; display: grid; place-items: center; background: #2b3023; color: var(--lime); font-size: 22px; }
+.player-art img { width: 100%; height: 100%; object-fit: cover; }
 .player-copy { display: grid; gap: 2px; margin-right: auto; }
 .player-copy span { color: var(--muted); font-size: 13px; }
+.timeline-note { display: none; }
 .play-button { width: 48px; height: 48px; border: 0; border-radius: 50%; background: var(--lime); color: #1a1c16; font-size: 16px; }
+.favorite-button { width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 50%; background: transparent; color: var(--lime); font-size: 18px; }
 
 @media (min-width: 700px) { .shell { padding-inline: 34px; } .hero { padding-top: 92px; } }
