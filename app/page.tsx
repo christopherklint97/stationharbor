@@ -1,6 +1,5 @@
 import Link from "next/link";
-
-const countries = ["Sweden", "Denmark", "United Kingdom", "United States"];
+import { StationBrowser } from "@/components/station-browser";
 
 export default function Home() {
   return (
@@ -19,35 +18,7 @@ export default function Home() {
         <p className="intro">Find a station. Press play. Keep it close.</p>
       </section>
 
-      <section className="discovery" aria-label="Discover stations">
-        <label className="search-label" htmlFor="station-search">Search stations</label>
-        <input
-          id="station-search"
-          className="search-input"
-          type="search"
-          placeholder="Name, genre, city, language…"
-        />
-        <div className="country-list" aria-label="Country filter">
-          {countries.map((country) => (
-            <button className="country-chip" key={country} type="button">
-              {country}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section className="station-section" aria-labelledby="popular-title">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">START HERE</p>
-            <h2 id="popular-title">Popular near you</h2>
-          </div>
-          <button className="quiet-button" type="button">Filters</button>
-        </div>
-        <div className="loading-card" role="status">
-          Stations loading soon. Your live directory will appear here.
-        </div>
-      </section>
+      <StationBrowser />
 
       <aside className="player" aria-label="Player">
         <div className="player-art" aria-hidden="true">♫</div>

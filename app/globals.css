@@ -44,6 +44,11 @@ h2 { font-size: 21px; letter-spacing: -.04em; margin: 0; }
 .country-chip { flex: 0 0 auto; background: var(--panel); }
 .station-section { padding-top: 32px; }
 .loading-card { margin-top: 16px; padding: 24px; min-height: 102px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); color: var(--muted); display: flex; align-items: center; }
+.station-list { display: grid; gap: 10px; margin-top: 16px; }
+.station-card { display: flex; align-items: center; gap: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
+.station-meta { min-width: 0; display: grid; gap: 4px; margin-right: auto; }
+.station-meta strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.station-meta span { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .player { position: fixed; bottom: 0; left: 0; right: 0; min-height: 82px; padding: 12px max(18px, calc((100vw - 744px) / 2)); background: rgba(20, 21, 19, .94); border-top: 1px solid var(--line); backdrop-filter: blur(16px); }
 .player-art { width: 48px; height: 48px; border-radius: 12px; display: grid; place-items: center; background: #2b3023; color: var(--lime); font-size: 22px; }
 .player-copy { display: grid; gap: 2px; margin-right: auto; }
