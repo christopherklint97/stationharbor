@@ -1,0 +1,12 @@
+services:
+  stationharbor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: stationharbor:latest
+    container_name: stationharbor
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:3004:3000"
+    environment:
+      NODE_ENV: production

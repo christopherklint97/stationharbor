@@ -20,14 +20,6 @@ export default function Home() {
 
       <StationBrowser />
 
-      <aside className="player" aria-label="Player">
-        <div className="player-art" aria-hidden="true">♫</div>
-        <div className="player-copy">
-          <strong>Choose a station</strong>
-          <span>Ready for live radio</span>
-        </div>
-        <button className="play-button" type="button" aria-label="Play selected station">▶</button>
-      </aside>
     </main>
   );
 }

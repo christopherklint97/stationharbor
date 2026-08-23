@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Station } from "@/lib/stations";
 
 const countries = [
@@ -18,6 +18,20 @@ export function StationBrowser() {
   const [stations, setStations] = useState<Station[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selectedStation, setSelectedStation] = useState<Station | null>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  async function playStation(station: Station) {
+    const audio = audioRef.current;
+    if (!audio) return;
+    setSelectedStation(station);
+    audio.src = station.streamUrl;
+    try {
+      await audio.play();
+    } catch {
+      setError(`Could not play ${station.name}. Try another station.`);
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -73,11 +87,19 @@ export function StationBrowser() {
           {stations.map((station) => (
             <article className="station-card" key={station.id}>
               <div className="station-meta"><strong>{station.name}</strong><span>{[station.region, station.countryCode, station.tags.slice(0, 2).join(" · ")].filter(Boolean).join(" · ")}</span></div>
-              <button className="play-button" type="button" aria-label={`Play ${station.name}`}>▶</button>
+              <button className="play-button" type="button" aria-label={`Play ${station.name}`} onClick={() => playStation(station)}>▶</button>
             </article>
           ))}
         </div>
       </div>
+      <audio ref={audioRef} preload="none" playsInline />
+      {selectedStation && (
+        <aside className="player" aria-label="Player">
+          <div className="player-art" aria-hidden="true">♫</div>
+          <div className="player-copy"><strong>{selectedStation.name}</strong><span>Live · {selectedStation.countryCode}</span></div>
+          <button className="play-button" type="button" aria-label={`Pause ${selectedStation.name}`} onClick={() => audioRef.current?.pause()}>Ⅱ</button>
+        </aside>
+      )}
     </section>
   );
 }
