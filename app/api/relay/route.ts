@@ -12,7 +12,6 @@ export async function GET(request: NextRequest) {
     const upstream = await fetch(url, {
       headers: { "User-Agent": "StationHarbor local relay/0.1", "Icy-MetaData": "1" },
       redirect: "follow",
-      signal: AbortSignal.timeout(15_000),
     });
     if (!upstream.ok || !upstream.body) return new Response("Upstream stream unavailable", { status: 502 });
 
