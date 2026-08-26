@@ -14,11 +14,11 @@ const countries = [
 type CountryCode = (typeof countries)[number][0];
 
 function PlayIcon() {
-  return <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z" fill="currentColor" /></svg>;
+  return <svg aria-hidden="true" className="player-control-icon" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z" fill="currentColor" /></svg>;
 }
 
 function PauseIcon() {
-  return <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M7 5h3v14H7zm7 0h3v14h-3z" fill="currentColor" /></svg>;
+  return <svg aria-hidden="true" className="player-control-icon" viewBox="0 0 24 24"><path d="M7 5h3v14H7zm7 0h3v14h-3z" fill="currentColor" /></svg>;
 }
 
 function AudioBars() {

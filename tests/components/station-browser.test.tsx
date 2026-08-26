@@ -55,7 +55,8 @@ describe("StationBrowser", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Play Sveriges Radio P1" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Pause Sveriges Radio P1" })).toBeInTheDocument());
+    const pauseButton = await screen.findByRole("button", { name: "Pause Sveriges Radio P1" });
+    expect(pauseButton.querySelector("svg")).toHaveClass("player-control-icon");
     expect(screen.getByText("Playing live")).toBeInTheDocument();
     expect(document.querySelector(".station-card")).toHaveAttribute("data-playing", "true");
   });
