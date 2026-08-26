@@ -55,8 +55,9 @@ describe("StationBrowser", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Play Sveriges Radio P1" }));
 
-    const pauseButton = await screen.findByRole("button", { name: "Pause Sveriges Radio P1" });
-    expect(pauseButton.querySelector("svg")).toHaveClass("player-control-icon");
+    const [rowPauseButton, playerPauseButton] = await screen.findAllByRole("button", { name: "Pause Sveriges Radio P1" });
+    expect(rowPauseButton.querySelector("svg")).toHaveClass("player-control-icon");
+    expect(playerPauseButton.querySelector("svg")).toHaveClass("player-control-icon");
     expect(screen.getByText("Playing live")).toBeInTheDocument();
     expect(document.querySelector(".station-card")).toHaveAttribute("data-playing", "true");
   });
@@ -69,6 +70,6 @@ describe("StationBrowser", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Play Sveriges Radio P1" }));
     fireEvent.pause(document.querySelector("audio")!);
 
-    expect(screen.getByRole("button", { name: "Resume Sveriges Radio P1" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Resume Sveriges Radio P1" })).toHaveLength(2);
   });
 });
