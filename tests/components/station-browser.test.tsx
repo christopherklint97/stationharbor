@@ -48,6 +48,18 @@ describe("StationBrowser", () => {
     expect(screen.getByRole("button", { name: "Open now playing" })).toBeInTheDocument();
   });
 
+  it("shows pause control and playing marker after audio begins", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ stations: [station] }))));
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    render(<StationBrowser />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Play Sveriges Radio P1" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Pause Sveriges Radio P1" })).toBeInTheDocument());
+    expect(screen.getByText("Playing live")).toBeInTheDocument();
+    expect(document.querySelector(".station-card")).toHaveAttribute("data-playing", "true");
+  });
+
   it("changes main player control to resume when native audio pauses", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ stations: [station] }))));
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
