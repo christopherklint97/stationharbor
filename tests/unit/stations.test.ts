@@ -55,6 +55,22 @@ describe("normalizeStations", () => {
     ]));
   });
 
+  it("uses NPR's official HTTPS program stream and collapses duplicate directory entries", () => {
+    const nprStations = normalizeStations([
+      { stationuuid: "npr-mp3", name: "NPR 24 Hour Program Stream", countrycode: "US", codec: "MP3", bitrate: 96, url_resolved: "http://npr-ice.streamguys1.com/live.mp3", lastcheckok: 1 },
+      { stationuuid: "npr-aac", name: "NPR 24 Hour Program Stream", countrycode: "US", codec: "AAC", bitrate: 64, url_resolved: "http://npr-ice.streamguys1.com/live.aac", lastcheckok: 1 },
+    ]);
+
+    expect(nprStations).toEqual([
+      expect.objectContaining({
+        id: "npr-mp3",
+        streamUrl: "https://npr-ice.streamguys1.com/live.mp3",
+        isPlayable: true,
+        availabilityReason: null,
+      }),
+    ]);
+  });
+
   it("keeps verified HTTPS stations from initial countries and deduplicates by UUID", () => {
     expect(normalizeStations(rawStations)).toEqual(expect.arrayContaining([
       expect.objectContaining({

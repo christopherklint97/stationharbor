@@ -76,8 +76,16 @@ function canonicalTags(value: string): string[] {
   return [...new Set(value.split(",").map((tag) => tag.trim().toLowerCase()).filter(Boolean))].sort();
 }
 
+function preferredStreamUrl(name: string, streamUrl: string): string {
+  if (name.trim().toLowerCase() === "npr 24 hour program stream" && /^http:\/\/npr-ice\.streamguys1\.com\/live\.(aac|mp3)$/i.test(streamUrl)) {
+    return "https://npr-ice.streamguys1.com/live.mp3";
+  }
+  return streamUrl;
+}
+
 export function normalizeStations(rawStations: unknown[]): Station[] {
   const seen = new Set<string>();
+  const seenProgramStreams = new Set<string>();
   const stations: Station[] = [];
 
   for (const rawStation of rawStations) {
@@ -86,13 +94,17 @@ export function normalizeStations(rawStations: unknown[]): Station[] {
 
     const raw = parsed.data;
     const countryCode = raw.countrycode.trim().toUpperCase();
-    const streamUrl = safeStreamUrl(raw.url_resolved);
-    if (!INITIAL_COUNTRY_CODES.includes(countryCode as InitialCountryCode) || !streamUrl || seen.has(raw.stationuuid)) continue;
+    const name = raw.name.trim() || "Unnamed station";
+    const rawStreamUrl = safeStreamUrl(raw.url_resolved);
+    const streamUrl = rawStreamUrl && preferredStreamUrl(name, rawStreamUrl);
+    const programStreamKey = streamUrl && `${countryCode}:${name.toLowerCase()}:${streamUrl}`;
+    if (!INITIAL_COUNTRY_CODES.includes(countryCode as InitialCountryCode) || !streamUrl || seen.has(raw.stationuuid) || (programStreamKey && seenProgramStreams.has(programStreamKey))) continue;
 
     seen.add(raw.stationuuid);
+    if (programStreamKey) seenProgramStreams.add(programStreamKey);
     stations.push({
       id: raw.stationuuid,
-      name: raw.name.trim() || "Unnamed station",
+      name,
       countryCode: countryCode as InitialCountryCode,
       region: raw.state.trim(),
       tags: canonicalTags(raw.tags),
