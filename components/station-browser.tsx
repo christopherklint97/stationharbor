@@ -18,7 +18,8 @@ export function StationBrowser() {
   const [query, setQuery] = useState("");
   const [stations, setStations] = useState<Station[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [directoryError, setDirectoryError] = useState("");
+  const [playerError, setPlayerError] = useState("");
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
   const [detailStation, setDetailStation] = useState<Station | null>(null);
@@ -36,7 +37,10 @@ export function StationBrowser() {
   const [sleepDeadline, setSleepDeadline] = useState<number | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [customMinutes, setCustomMinutes] = useState("");
+  const [playbackState, setPlaybackState] = useState<"idle" | "buffering" | "playing" | "paused" | "error">("idle");
   const audioRef = useRef<HTMLAudioElement>(null);
+  const retryCountRef = useRef(0);
+  const retryTimeoutRef = useRef<number | null>(null);
 
   const displayedStations = stations.filter((station) =>
     (!favoritesOnly || favorites.some((favorite) => favorite.id === station.id)) &&
@@ -54,16 +58,19 @@ export function StationBrowser() {
   }
 
   function startSleepTimer(minutes: number) {
-    // eslint-disable-next-line react-hooks/purity -- invoked only by an explicit user action.
     const deadline = Date.now() + minutes * 60_000;
     setSleepDeadline(deadline);
     setSecondsLeft(minutes * 60);
   }
 
   async function playStation(station: Station) {
-    if (!station.isVerified) { setError(`${station.name}: ${station.availabilityReason ?? "stream unavailable"}.`); return; }
+    if (!station.isVerified) { setPlayerError(`${station.name}: ${station.availabilityReason ?? "stream unavailable"}.`); return; }
     const audio = audioRef.current;
     if (!audio) return;
+    if (retryTimeoutRef.current) window.clearTimeout(retryTimeoutRef.current);
+    retryCountRef.current = 0;
+    setPlayerError("");
+    setPlaybackState("buffering");
     setSelectedStation(station);
     setIsPlayerOpen(true);
     document.title = `${station.name} — StationHarbor`;
@@ -73,11 +80,36 @@ export function StationBrowser() {
       navigator.mediaSession.setActionHandler("pause", () => audio.pause());
     }
     audio.src = station.streamUrl.startsWith("http:") ? `/api/relay?url=${encodeURIComponent(station.streamUrl)}` : station.streamUrl;
+    audio.load();
     try {
       await audio.play();
     } catch {
-      setError(`Could not play ${station.name}. Try another station.`);
+      setPlaybackState("error");
+      setPlayerError(`Could not play ${station.name}. Try another station.`);
     }
+  }
+
+  function togglePlayback() {
+    const audio = audioRef.current;
+    if (!audio || !selectedStation || playbackState === "buffering") return;
+    if (playbackState === "playing") audio.pause();
+    else { setPlaybackState("buffering"); void audio.play().catch(() => setPlaybackState("error")); }
+  }
+
+  function handleAudioError() {
+    const audio = audioRef.current;
+    const station = selectedStation;
+    if (!audio || !station || retryCountRef.current >= 2) {
+      setPlaybackState("error");
+      setPlayerError(`${station?.name ?? "Station"} stopped. Try playing it again or choose another station.`);
+      return;
+    }
+    retryCountRef.current += 1;
+    setPlaybackState("buffering");
+    retryTimeoutRef.current = window.setTimeout(() => {
+      audio.load();
+      void audio.play().catch(handleAudioError);
+    }, 1500);
   }
 
   useEffect(() => {
@@ -91,10 +123,13 @@ export function StationBrowser() {
         if (!response.ok) throw new Error("Live station directory is temporarily unavailable.");
         return response.json() as Promise<{ stations: Station[] }>;
       })
-      .then(({ stations: nextStations }) => setStations(nextStations))
+      .then(({ stations: nextStations }) => {
+        setDirectoryError("");
+        setStations(nextStations);
+      })
       .catch((reason: unknown) => {
         if (reason instanceof DOMException && reason.name === "AbortError") return;
-        setError("Live station directory is temporarily unavailable.");
+        setDirectoryError("Live station directory is temporarily unavailable.");
       })
       .finally(() => { if (!controller.signal.aborted) setIsLoading(false); });
 
@@ -116,6 +151,10 @@ export function StationBrowser() {
     const timer = window.setInterval(tick, 1000);
     return () => window.clearInterval(timer);
   }, [sleepDeadline]);
+
+  useEffect(() => {
+    return () => { if (retryTimeoutRef.current) window.clearTimeout(retryTimeoutRef.current); };
+  }, []);
 
   return (
     <section className="discovery" aria-label="Discover stations">
@@ -163,11 +202,11 @@ export function StationBrowser() {
       <div className="station-section" aria-live="polite">
         <div className="section-heading"><div><p className="eyebrow">START HERE</p><h2>{favoritesOnly ? "Favorites" : "Popular stations"}</h2></div><button className="quiet-button" onClick={() => setFavoritesOnly((current) => !current)} type="button">{favoritesOnly ? "All stations" : `Favorites (${favorites.length})`}</button></div>
         {isLoading && <div className="loading-card" role="status">Loading live stations…</div>}
-        {error && <div className="loading-card" role="alert">{error}</div>}
-        {!isLoading && !error && stations.length === 0 && <div className="loading-card">No verified HTTPS stations found.</div>}
+        {directoryError && <div className="loading-card" role="alert">{directoryError}</div>}
+        {!isLoading && !directoryError && stations.length === 0 && <div className="loading-card">No verified HTTPS stations found.</div>}
         <div className="station-list">
           {displayedStations.slice(0, visibleCount).map((station) => (
-            <article className="station-card" key={station.id}>
+            <article className={`station-card ${selectedStation?.id === station.id ? "is-active" : ""}`} key={station.id}>
               <div className="station-meta"><strong>{station.name}</strong><span>{[station.region, station.countryCode, station.tags.slice(0, 2).join(" · ")].filter(Boolean).join(" · ")}</span>{station.streamUrl.startsWith("http:") && station.isVerified && <small className="relay-note">HTTP stream — plays via local relay</small>}{!station.isVerified && <small className="unavailable">Unavailable: {station.availabilityReason}</small>}</div>
               <button className="details-button" type="button" aria-label={`Details ${station.name}`} onClick={() => setDetailStation(station)}>i</button>
               <button aria-pressed={favorites.some((favorite) => favorite.id === station.id)} className={`favorite-button ${favorites.some((favorite) => favorite.id === station.id) ? "is-favorite" : ""}`} type="button" aria-label={`${favorites.some((favorite) => favorite.id === station.id) ? "Remove" : "Add"} ${station.name} ${favorites.some((favorite) => favorite.id === station.id) ? "from" : "to"} favorites`} onClick={() => favoriteStation(station)}>{favorites.some((favorite) => favorite.id === station.id) ? "★" : "☆"}</button>
@@ -177,7 +216,17 @@ export function StationBrowser() {
         </div>
         {displayedStations.length > visibleCount && <button className="load-more" type="button" onClick={() => setVisibleCount((count) => count + 50)}>Show 50 more stations</button>}
       </div>
-      <audio ref={audioRef} preload="none" playsInline />
+      <audio
+        ref={audioRef}
+        preload="none"
+        playsInline
+        onCanPlay={() => setPlaybackState((current) => current === "buffering" ? "paused" : current)}
+        onError={handleAudioError}
+        onPause={() => setPlaybackState("paused")}
+        onPlay={() => { retryCountRef.current = 0; setPlaybackState("playing"); }}
+        onStalled={() => setPlaybackState("buffering")}
+        onWaiting={() => setPlaybackState("buffering")}
+      />
       {detailStation && <div className="details-sheet" role="dialog" aria-modal="true" aria-label="Station details"><button className="player-close" type="button" aria-label="Close station details" onClick={() => setDetailStation(null)}>×</button><h2>{detailStation.name}</h2><p>{detailStation.tags.join(" · ") || "Live radio"}</p><dl><dt>Language</dt><dd>{detailStation.language || "Unknown"}</dd><dt>Stream</dt><dd>{detailStation.codec} · {detailStation.bitrate} kbps{detailStation.hasHls ? " · HLS" : ""}</dd><dt>Votes</dt><dd>{detailStation.votes}</dd><dt>Last checked</dt><dd>{detailStation.lastCheckedAt ? new Date(detailStation.lastCheckedAt).toLocaleString() : "Unknown"}</dd></dl>{detailStation.homepage && <a href={detailStation.homepage} rel="noreferrer" target="_blank">Open station website</a>}</div>}
       {selectedStation && isPlayerOpen && (
         <div className="player-screen" role="dialog" aria-modal="true" aria-label="Now playing">
@@ -187,7 +236,9 @@ export function StationBrowser() {
           <h2>{selectedStation.name}</h2>
           <p className="player-description">{selectedStation.tags.length ? selectedStation.tags.join(" · ") : `Live radio · ${selectedStation.countryCode}`} · {selectedStation.codec} · {selectedStation.bitrate} kbps</p>
           <p className="timeline-note">Live timeline appears when broadcaster publishes programme metadata.</p>
-          <div className="player-actions"><button className="favorite-button" type="button" aria-label="Favorite current station" onClick={() => favoriteStation(selectedStation)}>★</button><button className="player-main-button" type="button" aria-label={`Pause ${selectedStation.name}`} onClick={() => audioRef.current?.pause()}>Ⅱ</button></div>
+          <div className="player-actions"><button className={`favorite-button ${favorites.some((favorite) => favorite.id === selectedStation.id) ? "is-favorite" : ""}`} aria-pressed={favorites.some((favorite) => favorite.id === selectedStation.id)} type="button" aria-label="Favorite current station" onClick={() => favoriteStation(selectedStation)}>{favorites.some((favorite) => favorite.id === selectedStation.id) ? "★" : "☆"}</button><button className="player-main-button" disabled={playbackState === "buffering"} type="button" aria-label={`${playbackState === "playing" ? "Pause" : "Resume"} ${selectedStation.name}`} onClick={togglePlayback}>{playbackState === "buffering" ? "…" : playbackState === "playing" ? "Ⅱ" : "▶"}</button></div>
+          <p className="playback-status" aria-live="polite">{playbackState === "buffering" ? "Buffering live audio…" : playbackState === "playing" ? "Playing live" : playbackState === "paused" ? "Paused" : playbackState === "error" ? "Playback stopped — retrying is limited to protect your data." : "Ready"}</p>
+          {playerError && <p className="player-error" role="alert">{playerError}</p>}
           <div className="timer-controls" aria-label="Sleep timer">{[5, 10, 15, 30, 45, 60].map((minutes) => <button className="quiet-button" key={minutes} type="button" onClick={() => startSleepTimer(minutes)}>{minutes}m</button>)}<input aria-label="Custom sleep timer minutes" inputMode="numeric" min="1" onChange={(event) => setCustomMinutes(event.target.value)} placeholder="Custom" type="number" value={customMinutes} /><button className="quiet-button" type="button" onClick={() => { const minutes = Number(customMinutes); if (minutes > 0) startSleepTimer(minutes); }}>Set</button></div>
           {sleepDeadline && <p className="sleep-status">Sleep timer: {Math.ceil(secondsLeft / 60)} min remaining</p>}
         </div>

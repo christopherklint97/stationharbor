@@ -47,4 +47,15 @@ describe("StationBrowser", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close now playing" }));
     expect(screen.getByRole("button", { name: "Open now playing" })).toBeInTheDocument();
   });
+
+  it("changes main player control to resume when native audio pauses", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ stations: [station] }))));
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    render(<StationBrowser />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Play Sveriges Radio P1" }));
+    fireEvent.pause(document.querySelector("audio")!);
+
+    expect(screen.getByRole("button", { name: "Resume Sveriges Radio P1" })).toBeInTheDocument();
+  });
 });
