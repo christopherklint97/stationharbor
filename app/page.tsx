@@ -9,7 +9,6 @@ export default function Home() {
           <span className="brand-mark" aria-hidden="true">S</span>
           <span>StationHarbor</span>
         </Link>
-        <button className="quiet-button" type="button">Favorites</button>
       </header>
 
       <section className="hero" aria-labelledby="page-title">

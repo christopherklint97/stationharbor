@@ -12,6 +12,6 @@ describe("StationHarbor home", () => {
     expect(screen.getByRole("button", { name: "United Kingdom" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "United States" })).toBeInTheDocument();
     expect(screen.getByRole("searchbox", { name: "Search stations" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Favorites" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /Favorites/ })).toHaveLength(1);
   });
 });

@@ -1,17 +1,15 @@
 "use client";
+/* eslint-disable @next/next/no-img-element -- remote station artwork is displayed directly instead of being proxied */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronDown, Clock3, ExternalLink, Info, MapPin, Search, SlidersHorizontal, Star, X } from "lucide-react";
 import { toggleFavorite } from "@/lib/favorites";
-import type { Station } from "@/lib/stations";
+import { categoryLabels, countryLabels, formatStationLocation, getStationCategories, stationKnownFor } from "@/lib/station-taxonomy";
+import { CATEGORY_IDS, US_STATES, type CategoryId } from "@/lib/station-query";
+import { INITIAL_COUNTRY_CODES, type Station, type StationSource, type SupportedCountryCode } from "@/lib/stations";
 
-const countries = [
-  ["SE", "Sweden"],
-  ["DK", "Denmark"],
-  ["GB", "United Kingdom"],
-  ["US", "United States"],
-] as const;
-
-type CountryCode = (typeof countries)[number][0];
+const INITIAL_VISIBLE_COUNT = 40;
+type WebsiteProfile = { siteName: string | null; description: string | null; homepage: string };
 
 function PlayIcon() {
   return <svg aria-hidden="true" className="player-control-icon" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z" fill="currentColor" /></svg>;
@@ -25,8 +23,48 @@ function AudioBars() {
   return <span aria-label="Playing" className="audio-bars"><i /><i /><i /></span>;
 }
 
+function StationArtwork({ station, className, lazy = false }: { station: Station; className: string; lazy?: boolean }) {
+  return <span aria-hidden="true" className={className}><span>{station.name.slice(0, 1).toUpperCase()}</span>{station.favicon && <img alt="" hidden={false} loading={lazy ? "lazy" : undefined} onError={(event) => { event.currentTarget.hidden = true; }} referrerPolicy="no-referrer" src={station.favicon} />}</span>;
+}
+
+function sleepDeadlineFromNow(minutes: number) {
+  return new Date().getTime() + minutes * 60_000;
+}
+
+function stationSources(station: Station): StationSource[] {
+  if (station.sources?.length) return station.sources;
+  return [{
+    id: station.id,
+    streamUrl: station.streamUrl,
+    codec: station.codec,
+    bitrate: station.bitrate,
+    hasHls: station.hasHls,
+    isVerified: station.isVerified,
+    isDirect: station.streamUrl.startsWith("https:"),
+    availabilityReason: station.availabilityReason,
+  }];
+}
+
+function stationCategories(station: Station) {
+  return station.categories?.length ? station.categories : getStationCategories(station.tags);
+}
+
+function sourceUrl(source: StationSource) {
+  return source.streamUrl.startsWith("http:") ? `/api/relay?url=${encodeURIComponent(source.streamUrl)}` : source.streamUrl;
+}
+
+function languageValues(stations: Station[]) {
+  return [...new Set(stations.flatMap((station) => station.language.split(",")).map((value) => value.trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function displayLanguage(value: string) {
+  return value.split(",").map((language) => language.trim()).filter(Boolean).map((language) => language.charAt(0).toLocaleUpperCase() + language.slice(1)).join(", ") || "Not listed";
+}
+
 export function StationBrowser() {
-  const [country, setCountry] = useState<CountryCode>("SE");
+  const [selectedCountries, setSelectedCountries] = useState<SupportedCountryCode[]>([...INITIAL_COUNTRY_CODES]);
+  const [usState, setUsState] = useState("");
   const [query, setQuery] = useState("");
   const [stations, setStations] = useState<Station[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -35,32 +73,44 @@ export function StationBrowser() {
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
   const [detailStation, setDetailStation] = useState<Station | null>(null);
+  const [websiteProfiles, setWebsiteProfiles] = useState<Record<string, { loading: boolean; profile: WebsiteProfile | null }>>({});
   const [favorites, setFavorites] = useState<Station[]>(() => {
     if (typeof window === "undefined") return [];
     try { return JSON.parse(localStorage.getItem("stationharbor:favorites") ?? "[]") as Station[]; } catch { return []; }
   });
   const [favoritesOnly, setFavoritesOnly] = useState(false);
-  const [category, setCategory] = useState("all");
+  const [category, setCategory] = useState<CategoryId>("all");
   const [language, setLanguage] = useState("all");
   const [codec, setCodec] = useState("all");
   const [hlsOnly, setHlsOnly] = useState(false);
   const [sort, setSort] = useState("popular");
-  const [visibleCount, setVisibleCount] = useState(50);
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
   const [sleepDeadline, setSleepDeadline] = useState<number | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [customMinutes, setCustomMinutes] = useState("");
   const [playbackState, setPlaybackState] = useState<"idle" | "buffering" | "playing" | "paused" | "error">("idle");
   const [isPlaying, setIsPlaying] = useState(false);
+  const [sourceIndex, setSourceIndex] = useState(0);
   const audioRef = useRef<HTMLAudioElement>(null);
   const retryCountRef = useRef(0);
+  const sourceIndexRef = useRef(0);
   const retryTimeoutRef = useRef<number | null>(null);
+  const allCountriesSelected = selectedCountries.length === INITIAL_COUNTRY_CODES.length;
 
-  const displayedStations = stations.filter((station) =>
-    (!favoritesOnly || favorites.some((favorite) => favorite.id === station.id)) &&
-    (language === "all" || station.language.toLowerCase().includes(language)) &&
-    (codec === "all" || station.codec === codec) && (!hlsOnly || station.hasHls) &&
-    (category === "all" || (category === "talk" ? station.tags.some((tag) => tag.includes("talk") || tag.includes("speech")) : station.tags.includes(category))),
-  ).sort((a, b) => sort === "votes" ? b.votes - a.votes : sort === "checked" ? (b.lastCheckedAt ?? "").localeCompare(a.lastCheckedAt ?? "") : sort === "changed" ? (b.lastChangedAt ?? "").localeCompare(a.lastChangedAt ?? "") : b.clickCount - a.clickCount);
+  const displayedStations = useMemo(() => stations.filter((station) => {
+    const stationLanguages = station.language.toLowerCase().split(",").map((value) => value.trim());
+    const sources = stationSources(station);
+    return (!favoritesOnly || favorites.some((favorite) => favorite.id === station.id))
+      && (language === "all" || stationLanguages.includes(language.toLowerCase()))
+      && (codec === "all" || sources.some((source) => source.codec === codec))
+      && (!hlsOnly || sources.some((source) => source.hasHls));
+  }).sort((a, b) => sort === "votes"
+    ? b.votes - a.votes
+    : sort === "checked"
+      ? (b.lastCheckedAt ?? "").localeCompare(a.lastCheckedAt ?? "")
+      : sort === "changed"
+        ? (b.lastChangedAt ?? "").localeCompare(a.lastChangedAt ?? "")
+        : b.clickCount - a.clickCount), [stations, favoritesOnly, favorites, language, codec, hlsOnly, sort]);
 
   function favoriteStation(station: Station) {
     setFavorites((current) => {
@@ -70,14 +120,36 @@ export function StationBrowser() {
     });
   }
 
+  function openStationDetails(station: Station) {
+    setDetailStation(station);
+    if (!station.homepage || websiteProfiles[station.id]) return;
+    setWebsiteProfiles((current) => ({ ...current, [station.id]: { loading: true, profile: null } }));
+    fetch(`/api/station-profile?id=${encodeURIComponent(station.id)}`)
+      .then((response) => response.ok ? response.json() as Promise<{ profile: WebsiteProfile | null }> : { profile: null })
+      .then(({ profile }) => setWebsiteProfiles((current) => ({ ...current, [station.id]: { loading: false, profile } })))
+      .catch(() => setWebsiteProfiles((current) => ({ ...current, [station.id]: { loading: false, profile: null } })));
+  }
+
   function startSleepTimer(minutes: number) {
-    const deadline = Date.now() + minutes * 60_000;
-    setSleepDeadline(deadline);
+    setSleepDeadline(sleepDeadlineFromNow(minutes));
     setSecondsLeft(minutes * 60);
   }
 
+  function setAudioSource(station: Station, index: number) {
+    const audio = audioRef.current;
+    const source = stationSources(station)[index];
+    if (!audio || !source) return false;
+    sourceIndexRef.current = index;
+    setSourceIndex(index);
+    audio.src = sourceUrl(source);
+    return true;
+  }
+
   async function playStation(station: Station) {
-    if (!station.isVerified) { setPlayerError(`${station.name}: ${station.availabilityReason ?? "stream unavailable"}.`); return; }
+    if (!station.isVerified) {
+      setPlayerError(`${station.name}: ${station.availabilityReason ?? "stream unavailable"}.`);
+      return;
+    }
     const audio = audioRef.current;
     if (!audio) return;
     if (retryTimeoutRef.current) window.clearTimeout(retryTimeoutRef.current);
@@ -87,63 +159,99 @@ export function StationBrowser() {
     setPlaybackState("buffering");
     setSelectedStation(station);
     setIsPlayerOpen(true);
-    document.title = `${station.name} — StationHarbor`;
-    if ("mediaSession" in navigator) {
-      navigator.mediaSession.metadata = new MediaMetadata({ title: station.name, artist: `${station.countryCode} live radio`, album: station.tags.join(" · "), artwork: station.favicon ? [{ src: station.favicon }] : [] });
-      navigator.mediaSession.setActionHandler("play", () => { void audio.play(); });
-      navigator.mediaSession.setActionHandler("pause", () => audio.pause());
-    }
-    audio.src = station.streamUrl.startsWith("http:") ? `/api/relay?url=${encodeURIComponent(station.streamUrl)}` : station.streamUrl;
-    audio.load();
+    if (!setAudioSource(station, 0)) return;
     try {
       await audio.play();
       setIsPlaying(true);
       setPlaybackState("playing");
     } catch {
-      setIsPlaying(false);
-      setPlaybackState("error");
-      setPlayerError(`Could not play ${station.name}. Try another station.`);
+      handleAudioError(station);
     }
   }
 
   function togglePlayback() {
     const audio = audioRef.current;
     if (!audio || !selectedStation) return;
-    if (isPlaying) { audio.pause(); return; }
+    if (isPlaying) {
+      audio.pause();
+      setIsPlaying(false);
+      setPlaybackState("paused");
+      return;
+    }
+    retryCountRef.current = 0;
     setPlaybackState("buffering");
     void audio.play().then(() => {
       setIsPlaying(true);
       setPlaybackState("playing");
-    }).catch(() => {
-      setIsPlaying(false);
-      setPlaybackState("error");
+    }).catch(() => handleAudioError(selectedStation));
+  }
+
+  function handleAudioError(stationOverride?: Station) {
+    const audio = audioRef.current;
+    const station = stationOverride ?? selectedStation;
+    if (!audio || !station) return;
+    const sources = stationSources(station);
+    const nextSourceIndex = sourceIndexRef.current + 1;
+    if (nextSourceIndex < sources.length) {
+      setPlaybackState("buffering");
+      setPlayerError(`Trying alternate stream ${nextSourceIndex + 1} of ${sources.length}…`);
+      if (setAudioSource(station, nextSourceIndex)) void audio.play().catch(() => handleAudioError(station));
+      return;
+    }
+    if (retryCountRef.current < 1) {
+      retryCountRef.current += 1;
+      setPlaybackState("buffering");
+      retryTimeoutRef.current = window.setTimeout(() => {
+        sourceIndexRef.current = -1;
+        handleAudioError(station);
+      }, 1500);
+      return;
+    }
+    setIsPlaying(false);
+    setPlaybackState("error");
+    setPlayerError(`${station.name} stopped. Try again or choose another station.`);
+  }
+
+  function toggleCountry(code: SupportedCountryCode) {
+    setIsLoading(true);
+    setVisibleCount(INITIAL_VISIBLE_COUNT);
+    setSelectedCountries((current) => {
+      if (current.length === INITIAL_COUNTRY_CODES.length) {
+        if (code !== "US") setUsState("");
+        return [code];
+      }
+      if (current.includes(code)) {
+        if (current.length === 1) return current;
+        if (code === "US") setUsState("");
+        return current.filter((country) => country !== code);
+      }
+      return [...current, code];
     });
   }
 
-  function handleAudioError() {
-    const audio = audioRef.current;
-    const station = selectedStation;
-    if (!audio || !station || retryCountRef.current >= 2) {
-      setIsPlaying(false);
-      setPlaybackState("error");
-      setPlayerError(`${station?.name ?? "Station"} stopped. Try playing it again or choose another station.`);
-      return;
-    }
-    retryCountRef.current += 1;
-    setPlaybackState("buffering");
-    retryTimeoutRef.current = window.setTimeout(() => {
-      audio.load();
-      void audio.play().catch(handleAudioError);
-    }, 1500);
+  function resetFilters() {
+    setIsLoading(true);
+    setSelectedCountries([...INITIAL_COUNTRY_CODES]);
+    setUsState("");
+    setCategory("all");
+    setLanguage("all");
+    setCodec("all");
+    setHlsOnly(false);
+    setSort("popular");
+    setQuery("");
+    setVisibleCount(INITIAL_VISIBLE_COUNT);
   }
 
   useEffect(() => {
     const controller = new AbortController();
-    const params = new URLSearchParams({ country });
+    const params = new URLSearchParams();
+    if (selectedCountries.length !== INITIAL_COUNTRY_CODES.length) params.set("countries", selectedCountries.join(","));
     if (query.trim()) params.set("q", query.trim());
-    if (category !== "all" && category !== "talk") params.set("tag", category);
+    if (category !== "all") params.set("category", category);
+    if (usState && selectedCountries.includes("US")) params.set("state", usState);
+    const endpoint = params.size ? `/api/stations?${params}` : "/api/stations";
 
-    fetch(`/api/stations?${params}`, { signal: controller.signal })
+    fetch(endpoint, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error("Live station directory is temporarily unavailable.");
         return response.json() as Promise<{ stations: Station[] }>;
@@ -159,7 +267,7 @@ export function StationBrowser() {
       .finally(() => { if (!controller.signal.aborted) setIsLoading(false); });
 
     return () => controller.abort();
-  }, [country, query, category]);
+  }, [selectedCountries, usState, query, category]);
 
   useEffect(() => {
     if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js");
@@ -168,9 +276,14 @@ export function StationBrowser() {
   useEffect(() => {
     if (!sleepDeadline) return;
     const tick = () => {
-      const next = Math.max(0, Math.ceil((sleepDeadline - Date.now()) / 1000));
+      const next = Math.max(0, Math.ceil((sleepDeadline - new Date().getTime()) / 1000));
       setSecondsLeft(next);
-      if (next === 0) { audioRef.current?.pause(); setSleepDeadline(null); }
+      if (next === 0) {
+        audioRef.current?.pause();
+        setIsPlaying(false);
+        setPlaybackState("paused");
+        setSleepDeadline(null);
+      }
     };
     tick();
     const timer = window.setInterval(tick, 1000);
@@ -178,105 +291,163 @@ export function StationBrowser() {
   }, [sleepDeadline]);
 
   useEffect(() => {
-    return () => { if (retryTimeoutRef.current) window.clearTimeout(retryTimeoutRef.current); };
+    if (!isPlayerOpen && !detailStation) return;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousRootOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousRootOverflow;
+    };
+  }, [isPlayerOpen, detailStation]);
+
+  useEffect(() => {
+    if (!selectedStation) return;
+    document.title = `${selectedStation.name} — StationHarbor`;
+    if (!("mediaSession" in navigator)) return;
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: selectedStation.name,
+      artist: stationKnownFor(selectedStation),
+      album: "StationHarbor live radio",
+      artwork: selectedStation.favicon ? [{ src: selectedStation.favicon }] : [],
+    });
+    navigator.mediaSession.setActionHandler("play", () => { void audioRef.current?.play(); });
+    navigator.mediaSession.setActionHandler("pause", () => {
+      audioRef.current?.pause();
+      setIsPlaying(false);
+      setPlaybackState("paused");
+    });
+  }, [selectedStation]);
+
+  useEffect(() => () => {
+    if (retryTimeoutRef.current) window.clearTimeout(retryTimeoutRef.current);
   }, []);
+
+  const activeFilterCount = Number(!allCountriesSelected) + Number(Boolean(usState)) + Number(category !== "all") + Number(language !== "all") + Number(codec !== "all") + Number(hlsOnly) + Number(sort !== "popular") + Number(Boolean(query));
+  const advancedFilterCount = Number(language !== "all") + Number(codec !== "all") + Number(hlsOnly) + Number(sort !== "popular");
+  const currentSource = selectedStation ? stationSources(selectedStation)[sourceIndex] : null;
+  const detailWebsiteProfile = detailStation ? websiteProfiles[detailStation.id] : null;
+  const selectedWebsiteProfile = selectedStation ? websiteProfiles[selectedStation.id]?.profile : null;
 
   return (
     <section className="discovery" aria-label="Discover stations">
-      <label className="search-label" htmlFor="station-search">Search stations</label>
-      <input
-        id="station-search"
-        className="search-input"
-        type="search"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        placeholder="Name, genre, city, language…"
-      />
-      <div className="country-list" aria-label="Country filter">
-        {countries.map(([code, label]) => (
-          <button
-            aria-pressed={country === code}
-            className="country-chip"
-            key={code}
-            onClick={() => setCountry(code)}
-            type="button"
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      <div className="metadata-filters" aria-label="Category filter">
-        <select aria-label="Category" value={category} onChange={(event) => setCategory(event.target.value)}><option value="all">All categories</option><option value="talk">Talk radio</option><option value="news">News</option><option value="music">Music</option><option value="sports">Sports</option><option value="jazz">Jazz</option><option value="rock">Rock</option></select>
-      </div>
+      <div className="filter-panel">
+        <div className="search-row">
+          <label className="search-label" htmlFor="station-search">Search stations</label>
+          <div className="search-control"><Search aria-hidden="true" size={20} /><input id="station-search" className="search-input" type="search" value={query} onChange={(event) => { setIsLoading(true); setQuery(event.target.value); }} placeholder="Station, city or team" /></div>
+        </div>
 
-      <div className="metadata-filters" aria-label="Advanced filters">
-        <select aria-label="Language" value={language} onChange={(event) => setLanguage(event.target.value)}><option value="all">All languages</option>{[...new Set(stations.map((station) => station.language.toLowerCase()).filter(Boolean))].map((value) => <option key={value} value={value}>{value}</option>)}</select>
-        <select aria-label="Codec" value={codec} onChange={(event) => setCodec(event.target.value)}><option value="all">All codecs</option>{[...new Set(stations.map((station) => station.codec).filter(Boolean))].map((value) => <option key={value} value={value}>{value}</option>)}</select>
-        <select aria-label="Sort stations" value={sort} onChange={(event) => setSort(event.target.value)}><option value="popular">Popular</option><option value="votes">Most voted</option><option value="checked">Recently checked</option><option value="changed">Recently changed</option></select>
-        <button aria-pressed={hlsOnly} className="country-chip" type="button" onClick={() => setHlsOnly((current) => !current)}>HLS only</button>
-      </div>
+        <fieldset className="filter-group">
+          <legend>Countries <span>Choose one or more</span></legend>
+          <div className="country-list" aria-label="Country filter">
+            <button aria-pressed={allCountriesSelected} className="country-chip" onClick={() => { setIsLoading(true); setSelectedCountries([...INITIAL_COUNTRY_CODES]); setUsState(""); }} type="button">{allCountriesSelected && <Check aria-hidden="true" size={15} />}All countries</button>
+            {INITIAL_COUNTRY_CODES.map((code) => {
+              const selected = !allCountriesSelected && selectedCountries.includes(code);
+              return <button aria-pressed={selected} className="country-chip" key={code} onClick={() => toggleCountry(code)} type="button">{selected && <Check aria-hidden="true" size={15} />}{countryLabels[code]}</button>;
+            })}
+          </div>
+          {!allCountriesSelected && selectedCountries.includes("US") && (
+            <label className="state-filter">US state<select aria-label="US state" value={usState} onChange={(event) => { setIsLoading(true); setUsState(event.target.value); setVisibleCount(INITIAL_VISIBLE_COUNT); }}><option value="">All US states</option>{US_STATES.map((state) => <option key={state} value={state}>{state}</option>)}</select></label>
+          )}
+        </fieldset>
 
-      <div className="active-filters" aria-label="Selected filters">
-        {category !== "all" && <button type="button" onClick={() => setCategory("all")}>{category === "talk" ? "Talk radio" : category} ×</button>}
-        {language !== "all" && <button type="button" onClick={() => setLanguage("all")}>{language} ×</button>}
-        {codec !== "all" && <button type="button" onClick={() => setCodec("all")}>{codec} ×</button>}
-        {hlsOnly && <button type="button" onClick={() => setHlsOnly(false)}>HLS only ×</button>}
-        {sort !== "popular" && <button type="button" onClick={() => setSort("popular")}>Sort: {sort} ×</button>}
+        <div className="filter-primary-row">
+          <label className="select-field">Category<select aria-label="Category" value={category} onChange={(event) => { setIsLoading(true); setCategory(event.target.value as CategoryId); setVisibleCount(INITIAL_VISIBLE_COUNT); }}>{CATEGORY_IDS.map((id) => <option key={id} value={id}>{categoryLabels[id]}</option>)}</select><ChevronDown aria-hidden="true" size={16} /></label>
+          <details className="advanced-filters">
+            <summary><SlidersHorizontal aria-hidden="true" size={17} />More filters{advancedFilterCount > 0 && <span>{advancedFilterCount}</span>}</summary>
+            <div className="advanced-grid">
+              <label>Language<select aria-label="Language" value={language} onChange={(event) => setLanguage(event.target.value)}><option value="all">All languages</option>{languageValues(stations).map((value) => <option key={value} value={value.toLowerCase()}>{value}</option>)}</select></label>
+              <label>Stream format<select aria-label="Codec" value={codec} onChange={(event) => setCodec(event.target.value)}><option value="all">All formats</option>{[...new Set(stations.flatMap((station) => stationSources(station).map((source) => source.codec)).filter(Boolean))].sort().map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+              <label>Sort by<select aria-label="Sort stations" value={sort} onChange={(event) => setSort(event.target.value)}><option value="popular">Most popular</option><option value="votes">Most voted</option><option value="checked">Recently checked</option><option value="changed">Recently changed</option></select></label>
+              <label className="toggle-field"><input checked={hlsOnly} onChange={(event) => setHlsOnly(event.target.checked)} type="checkbox" />HLS streams only</label>
+            </div>
+          </details>
+        </div>
+
+        {activeFilterCount > 0 && <div className="active-filters" aria-label="Selected filters">
+          {!allCountriesSelected && selectedCountries.map((code) => <button aria-label={`Remove ${countryLabels[code]} filter`} key={code} type="button" onClick={() => toggleCountry(code)}>{countryLabels[code]} <X aria-hidden="true" size={13} /></button>)}
+          {usState && <button aria-label={`Remove ${usState} state filter`} type="button" onClick={() => { setIsLoading(true); setUsState(""); }}>United States · {usState} <X aria-hidden="true" size={13} /></button>}
+          {category !== "all" && <button aria-label={`Remove ${categoryLabels[category]} filter`} type="button" onClick={() => { setIsLoading(true); setCategory("all"); }}>{categoryLabels[category]} <X aria-hidden="true" size={13} /></button>}
+          {language !== "all" && <button type="button" onClick={() => setLanguage("all")}>{language} <X aria-hidden="true" size={13} /></button>}
+          {codec !== "all" && <button type="button" onClick={() => setCodec("all")}>{codec} <X aria-hidden="true" size={13} /></button>}
+          {hlsOnly && <button type="button" onClick={() => setHlsOnly(false)}>HLS only <X aria-hidden="true" size={13} /></button>}
+          {sort !== "popular" && <button type="button" onClick={() => setSort("popular")}>Custom sort <X aria-hidden="true" size={13} /></button>}
+          <button className="clear-filters" type="button" onClick={resetFilters}>Clear all</button>
+        </div>}
       </div>
 
       <div className="station-section" aria-live="polite">
-        <div className="section-heading"><div><p className="eyebrow">START HERE</p><h2>{favoritesOnly ? "Favorites" : "Popular stations"}</h2></div><button className="quiet-button" onClick={() => setFavoritesOnly((current) => !current)} type="button">{favoritesOnly ? "All stations" : `Favorites (${favorites.length})`}</button></div>
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">DISCOVER</p>
+            <h2>{favoritesOnly ? "Your favorites" : category === "all" ? "Explore live radio" : categoryLabels[category]}</h2>
+            <p className="result-scope"><span>{displayedStations.length.toLocaleString()} stations</span><span>{allCountriesSelected ? "4 countries" : selectedCountries.map((code) => countryLabels[code]).join(" · ")}{usState ? ` · ${usState}` : ""}</span></p>
+          </div>
+          <button aria-pressed={favoritesOnly} className="quiet-button favorites-filter" onClick={() => setFavoritesOnly((current) => !current)} type="button"><Star aria-hidden="true" fill={favoritesOnly ? "currentColor" : "none"} size={17} />{favoritesOnly ? "All stations" : `Favorites (${favorites.length})`}</button>
+        </div>
         {isLoading && <div className="loading-card" role="status">Loading live stations…</div>}
         {directoryError && <div className="loading-card" role="alert">{directoryError}</div>}
-        {!isLoading && !directoryError && stations.length === 0 && <div className="loading-card">No verified HTTPS stations found.</div>}
+        {!isLoading && !directoryError && displayedStations.length === 0 && <div className="loading-card">No stations match these filters. Clear a filter or try another search.</div>}
         <div className="station-list">
           {displayedStations.slice(0, visibleCount).map((station) => {
             const isCurrentStation = selectedStation?.id === station.id;
             const isCurrentStationPlaying = isCurrentStation && isPlaying;
+            const stationCategoryList = stationCategories(station);
+            const categories = category !== "all" && stationCategoryList.includes(category)
+              ? [category, ...stationCategoryList.filter((item) => item !== category)]
+              : stationCategoryList;
+            const isFavorite = favorites.some((favorite) => favorite.id === station.id);
             return (
-            <article className={`station-card ${isCurrentStation ? "is-active" : ""}`} data-playing={isCurrentStationPlaying} key={station.id}>
-              <div className="station-meta"><strong>{isCurrentStationPlaying && <AudioBars />}{station.name}</strong><span>{[station.region, station.countryCode, station.tags.slice(0, 2).join(" · ")].filter(Boolean).join(" · ")}</span>{station.streamUrl.startsWith("http:") && station.isVerified && <small className="relay-note">HTTP stream — plays via local relay</small>}{!station.isVerified && <small className="unavailable">Unavailable: {station.availabilityReason}</small>}</div>
-              <button className="details-button" type="button" aria-label={`Details ${station.name}`} onClick={() => setDetailStation(station)}>i</button>
-              <button aria-pressed={favorites.some((favorite) => favorite.id === station.id)} className={`favorite-button ${favorites.some((favorite) => favorite.id === station.id) ? "is-favorite" : ""}`} type="button" aria-label={`${favorites.some((favorite) => favorite.id === station.id) ? "Remove" : "Add"} ${station.name} ${favorites.some((favorite) => favorite.id === station.id) ? "from" : "to"} favorites`} onClick={() => favoriteStation(station)}>{favorites.some((favorite) => favorite.id === station.id) ? "★" : "☆"}</button>
-              <button className="play-button" disabled={!station.isVerified} type="button" aria-label={station.isVerified ? `${isCurrentStationPlaying ? "Pause" : isCurrentStation ? "Resume" : "Play"} ${station.name}` : `${station.name} unavailable`} onClick={() => isCurrentStation ? togglePlayback() : playStation(station)}>{isCurrentStationPlaying ? <PauseIcon /> : <PlayIcon />}</button>
-            </article>
+              <article className={`station-card ${isCurrentStation ? "is-active" : ""}`} data-playing={isCurrentStationPlaying} key={station.id}>
+                <button className="station-summary" type="button" aria-label={`Details for ${station.name}`} onClick={() => openStationDetails(station)}>
+                  <StationArtwork className="station-art" lazy station={station} />
+                  <span className="station-meta">
+                    <strong>{isCurrentStationPlaying && <AudioBars />}{station.name}</strong>
+                    <span className="station-location"><MapPin aria-hidden="true" size={13} />{formatStationLocation(station)}</span>
+                    <span className="category-badges">{categories.slice(0, 2).map((item) => <span key={item}>{categoryLabels[item]}</span>)}{station.sourceCount > 1 && <span>{station.sourceCount} streams grouped</span>}</span>
+                  </span>
+                  <Info aria-hidden="true" className="summary-info" size={19} />
+                </button>
+                <button aria-pressed={isFavorite} className={`favorite-button ${isFavorite ? "is-favorite" : ""}`} type="button" aria-label={`${isFavorite ? "Remove" : "Add"} ${station.name} ${isFavorite ? "from" : "to"} favorites`} onClick={() => favoriteStation(station)}><Star aria-hidden="true" fill={isFavorite ? "currentColor" : "none"} size={21} /></button>
+                <button className="play-button" disabled={!station.isVerified} type="button" aria-label={station.isVerified ? `${isCurrentStationPlaying ? "Pause" : isCurrentStation ? "Resume" : "Play"} ${station.name}` : `${station.name} unavailable`} onClick={() => isCurrentStation ? togglePlayback() : playStation(station)}>{isCurrentStationPlaying ? <PauseIcon /> : <PlayIcon />}</button>
+              </article>
             );
           })}
         </div>
-        {displayedStations.length > visibleCount && <button className="load-more" type="button" onClick={() => setVisibleCount((count) => count + 50)}>Show 50 more stations</button>}
+        {displayedStations.length > visibleCount && <button className="load-more" type="button" onClick={() => setVisibleCount((count) => count + INITIAL_VISIBLE_COUNT)}>Show {Math.min(INITIAL_VISIBLE_COUNT, displayedStations.length - visibleCount)} more <span>{visibleCount} of {displayedStations.length} shown</span></button>}
       </div>
-      <audio
-        ref={audioRef}
-        preload="none"
-        playsInline
-        onError={handleAudioError}
-        onPause={() => { setIsPlaying(false); setPlaybackState("paused"); }}
-        onPlay={() => { retryCountRef.current = 0; setIsPlaying(true); setPlaybackState("playing"); }}
-        onStalled={() => setPlaybackState("buffering")}
-        onWaiting={() => setPlaybackState("buffering")}
-      />
-      {detailStation && <div className="details-sheet" role="dialog" aria-modal="true" aria-label="Station details"><button className="player-close" type="button" aria-label="Close station details" onClick={() => setDetailStation(null)}>×</button><h2>{detailStation.name}</h2><p>{detailStation.tags.join(" · ") || "Live radio"}</p><dl><dt>Language</dt><dd>{detailStation.language || "Unknown"}</dd><dt>Stream</dt><dd>{detailStation.codec} · {detailStation.bitrate} kbps{detailStation.hasHls ? " · HLS" : ""}</dd><dt>Votes</dt><dd>{detailStation.votes}</dd><dt>Last checked</dt><dd>{detailStation.lastCheckedAt ? new Date(detailStation.lastCheckedAt).toLocaleString() : "Unknown"}</dd></dl>{detailStation.homepage && <a href={detailStation.homepage} rel="noreferrer" target="_blank">Open station website</a>}</div>}
+
+      <audio ref={audioRef} preload="none" playsInline onError={() => handleAudioError()} onPause={() => { setIsPlaying(false); setPlaybackState("paused"); }} onPlay={() => { setPlayerError(""); setIsPlaying(true); setPlaybackState("playing"); }} onStalled={() => setPlaybackState("buffering")} onWaiting={() => setPlaybackState("buffering")} />
+
+      {detailStation && <div className="dialog-backdrop"><section className="details-sheet" role="dialog" aria-modal="true" aria-label="Station details">
+        <button className="dialog-close" type="button" aria-label="Close station details" onClick={() => setDetailStation(null)}><X aria-hidden="true" /></button>
+        <div className="detail-identity"><StationArtwork className="detail-art" station={detailStation} /><div><p className="eyebrow">STATION PROFILE</p><h2>{detailStation.name}</h2><p>{formatStationLocation(detailStation)} · {countryLabels[detailStation.countryCode]}</p></div></div>
+        <div className="detail-categories">{stationCategories(detailStation).map((item) => <span key={item}>{categoryLabels[item]}</span>)}</div>
+        <section className="known-for"><h3>{detailWebsiteProfile?.profile?.description ? "About this station" : "Known for"}</h3><p>{detailWebsiteProfile?.profile?.description ?? stationKnownFor(detailStation)}</p>{detailWebsiteProfile?.loading && <small>Checking the station website for a fuller description…</small>}{detailWebsiteProfile?.profile?.description && <small>From {detailWebsiteProfile.profile.siteName || detailStation.name} website</small>}{stationCategories(detailStation).includes("sports") && <div className="sports-note"><strong>Live game coverage is not verified</strong><span>The directory identifies this as sports radio, but NFL and other event rights vary by schedule and listener location. Check the broadcaster before kickoff.</span></div>}</section>
+        <div className="detail-actions"><button className="detail-play" type="button" disabled={!detailStation.isVerified} onClick={() => { setDetailStation(null); void playStation(detailStation); }}><PlayIcon />Listen live</button>{detailStation.homepage && <a href={detailStation.homepage} rel="noreferrer" target="_blank">Visit station website <ExternalLink aria-hidden="true" size={15} /></a>}</div>
+        <dl className="station-facts"><div><dt>Language</dt><dd>{displayLanguage(detailStation.language)}</dd></div><div><dt>Audio format</dt><dd>{detailStation.codec || "Unknown format"}{detailStation.bitrate ? ` · ${detailStation.bitrate} kbps` : ""}{detailStation.hasHls ? " · HLS" : ""}</dd></div><div><dt>Available streams</dt><dd>{detailStation.sourceCount || 1}{(detailStation.sourceCount || 1) > 1 ? " sources grouped; the best compatible source is selected and alternates are tried automatically" : " community directory stream"}</dd></div><div><dt>Last stream check</dt><dd>{detailStation.lastCheckedAt ? new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(detailStation.lastCheckedAt)) : detailStation.isVerified ? "Passed; date not supplied" : "Recent check failed"}</dd></div></dl>
+        <p className="data-note">StationHarbor summarizes community directory metadata. For current programmes and live sports schedules, visit the station website. Availability can vary by location and broadcast rights.</p>
+      </section></div>}
+
       {selectedStation && isPlayerOpen && (
         <div className="player-screen" role="dialog" aria-modal="true" aria-label="Now playing">
-          <button className="player-close" type="button" aria-label="Close now playing" onClick={() => setIsPlayerOpen(false)}>⌄</button>
-          <div className="player-cover">{selectedStation.favicon ? <img src={selectedStation.favicon} alt="" /> : "♫"}</div>
-          <p className="eyebrow">NOW PLAYING</p>
-          <h2>{selectedStation.name}</h2>
-          <p className="player-description">{selectedStation.tags.length ? selectedStation.tags.join(" · ") : `Live radio · ${selectedStation.countryCode}`} · {selectedStation.codec} · {selectedStation.bitrate} kbps</p>
-          <p className="timeline-note">Live timeline appears when broadcaster publishes programme metadata.</p>
-          <div className="player-actions"><button className={`favorite-button ${favorites.some((favorite) => favorite.id === selectedStation.id) ? "is-favorite" : ""}`} aria-pressed={favorites.some((favorite) => favorite.id === selectedStation.id)} type="button" aria-label="Favorite current station" onClick={() => favoriteStation(selectedStation)}>{favorites.some((favorite) => favorite.id === selectedStation.id) ? "★" : "☆"}</button><button className="player-main-button" type="button" aria-label={`${isPlaying ? "Pause" : "Resume"} ${selectedStation.name}`} onClick={togglePlayback}>{isPlaying ? <PauseIcon /> : <PlayIcon />}</button></div>
-          <p className="playback-status" aria-live="polite">{playbackState === "buffering" && isPlaying ? "Rebuffering live audio…" : isPlaying ? "Playing live" : playbackState === "paused" ? "Paused" : playbackState === "error" ? "Playback stopped — retrying is limited to protect your data." : "Connecting to live audio…"}</p>
+          <button className="player-close" type="button" aria-label="Minimize now playing" onClick={() => setIsPlayerOpen(false)}><ChevronDown aria-hidden="true" /></button>
+          <StationArtwork className="player-cover" station={selectedStation} />
+          <div className="now-playing-copy"><p className="eyebrow">LIVE RADIO</p><h2>{selectedStation.name}</h2><p className="player-description">{selectedWebsiteProfile?.description ?? stationKnownFor(selectedStation)}</p>{!selectedWebsiteProfile?.description && <div className="detail-categories">{stationCategories(selectedStation).slice(0, 3).map((item) => <span key={item}>{categoryLabels[item]}</span>)}</div>}</div>
+          <div className="player-actions"><button className={`favorite-button ${favorites.some((favorite) => favorite.id === selectedStation.id) ? "is-favorite" : ""}`} aria-pressed={favorites.some((favorite) => favorite.id === selectedStation.id)} type="button" aria-label="Favorite current station" onClick={() => favoriteStation(selectedStation)}><Star aria-hidden="true" fill={favorites.some((favorite) => favorite.id === selectedStation.id) ? "currentColor" : "none"} /></button><button className={`player-main-button ${playbackState === "buffering" ? "is-buffering" : ""}`} type="button" aria-label={`${playbackState === "buffering" ? "Connecting to" : isPlaying ? "Pause" : "Resume"} ${selectedStation.name}`} onClick={togglePlayback}>{playbackState === "buffering" ? <span className="buffer-spinner" /> : isPlaying ? <PauseIcon /> : <PlayIcon />}</button><button className="player-info-button" type="button" aria-label={`Station information for ${selectedStation.name}`} onClick={() => { setIsPlayerOpen(false); openStationDetails(selectedStation); }}><Info aria-hidden="true" /></button></div>
+          <p className="playback-status" aria-live="polite"><span>{playbackState === "buffering" ? sourceIndex > 0 ? `Connecting to alternate stream ${sourceIndex + 1}…` : "Connecting to live audio…" : isPlaying ? "Playing live" : playbackState === "paused" ? "Paused" : playbackState === "error" ? "Playback stopped" : "Ready"}</span>{currentSource ? ` · ${currentSource.codec}${currentSource.bitrate ? ` ${currentSource.bitrate} kbps` : ""}` : ""}</p>
           {playerError && <p className="player-error" role="alert">{playerError}</p>}
-          <div className="timer-controls" aria-label="Sleep timer">{[5, 10, 15, 30, 45, 60].map((minutes) => <button className="quiet-button" key={minutes} type="button" onClick={() => startSleepTimer(minutes)}>{minutes}m</button>)}<input aria-label="Custom sleep timer minutes" inputMode="numeric" min="1" onChange={(event) => setCustomMinutes(event.target.value)} placeholder="Custom" type="number" value={customMinutes} /><button className="quiet-button" type="button" onClick={() => { const minutes = Number(customMinutes); if (minutes > 0) startSleepTimer(minutes); }}>Set</button></div>
-          {sleepDeadline && <p className="sleep-status">Sleep timer: {Math.ceil(secondsLeft / 60)} min remaining</p>}
+          {stationCategories(selectedStation).includes("sports") && <p className="timeline-note">Sports station; live game coverage is not confirmed by the directory.{selectedStation.homepage && <> <a href={selectedStation.homepage} rel="noreferrer" target="_blank">Check station schedule</a>.</>}</p>}
+          <details className="sleep-timer"><summary><Clock3 aria-hidden="true" size={15} />Sleep timer{sleepDeadline ? ` · ${Math.ceil(secondsLeft / 60)} min` : ""}</summary><div className="timer-controls">{[5, 10, 15, 30, 45, 60].map((minutes) => <button className="quiet-button" key={minutes} type="button" onClick={() => startSleepTimer(minutes)}>{minutes}m</button>)}<input aria-label="Custom sleep timer minutes" inputMode="numeric" min="1" onChange={(event) => setCustomMinutes(event.target.value)} placeholder="Custom" type="number" value={customMinutes} /><button className="quiet-button" type="button" onClick={() => { const minutes = Number(customMinutes); if (minutes > 0) startSleepTimer(minutes); }}>Set</button></div></details>
         </div>
       )}
+
       {selectedStation && !isPlayerOpen && (
-        <button className="mini-player" type="button" aria-label="Open now playing" onClick={() => setIsPlayerOpen(true)}>
-          <span className="mini-art">{selectedStation.favicon ? <img src={selectedStation.favicon} alt="" /> : "♫"}</span>
-          <span className="mini-copy"><strong>{selectedStation.name}</strong><small>{selectedStation.tags.slice(0, 2).join(" · ") || "Live radio"}</small></span>
-          <span className="mini-open">⌃</span>
-        </button>
+        <div className="mini-player" role="region" aria-label="Mini player">
+          <button className="mini-reopen" type="button" aria-label={`Open now playing for ${selectedStation.name}`} onClick={() => setIsPlayerOpen(true)}><StationArtwork className="mini-art" station={selectedStation} /><span className="mini-copy"><strong>{selectedStation.name}</strong><small>{playbackState === "buffering" ? "Connecting…" : isPlaying ? "Playing live" : "Paused"} · {categoryLabels[stationCategories(selectedStation)[0] ?? "all"]}</small></span></button>
+          <button className="mini-play" type="button" aria-label={`${isPlaying ? "Pause" : "Resume"} mini player`} onClick={togglePlayback}>{isPlaying ? <PauseIcon /> : <PlayIcon />}</button>
+        </div>
       )}
     </section>
   );
