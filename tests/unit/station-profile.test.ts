@@ -109,7 +109,10 @@ describe("station website profiles", () => {
     expect(isPublicAddress("64:ff9b:1::7f00:1")).toBe(false);
     expect(isPublicAddress("2002:7f00:1::")).toBe(false);
     expect(isPublicAddress("2001:db8::1")).toBe(false);
+    expect(isPublicAddress("2001:100::1")).toBe(false);
+    expect(isPublicAddress("2001:30::1")).toBe(false);
+    expect(isPublicAddress("192.88.99.2")).toBe(false);
     expect(isPublicAddress("1.1.1.1")).toBe(true);
-    expect(isPublicAddress("2606:4700:4700::1111")).toBe(true);
+    expect(isPublicAddress("2606:4700:4700::1111")).toBe(false);
   });
 });

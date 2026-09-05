@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { categoryLabels, formatStationLocation, getStationCategories, stationKnownFor } from "@/lib/station-taxonomy";
+import { categoryLabels, categoryTagQueries, formatStationLocation, getStationCategories, stationKnownFor } from "@/lib/station-taxonomy";
 
 describe("station taxonomy", () => {
   it("combines news, talk, speech, and public radio into News & Talk", () => {
@@ -14,6 +14,15 @@ describe("station taxonomy", () => {
       "rock",
       "decades",
     ]);
+  });
+
+  it("keeps category aliases complete without excessive upstream fan-out", () => {
+    expect(categoryTagQueries["news-talk"]).toEqual(["news", "talk", "speech"]);
+    expect(categoryTagQueries.sports).toEqual(["sport", "football", "nfl"]);
+    expect(categoryTagQueries.rock).toEqual(["rock", "metal", "punk"]);
+    expect(categoryTagQueries.electronic).toEqual(["electronic", "dance", "techno"]);
+    expect(categoryTagQueries["country-folk"]).toEqual(["country", "folk"]);
+    expect(Math.max(...Object.values(categoryTagQueries).map((aliases) => aliases.length))).toBeLessThanOrEqual(6);
   });
 
   it("does not confuse classical rock with classical music", () => {

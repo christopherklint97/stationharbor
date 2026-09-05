@@ -17,17 +17,17 @@ export const categoryLabels: Record<CategoryId, string> = {
 };
 
 export const categoryTagQueries: Record<Exclude<CategoryId, "all">, string[]> = {
-  "news-talk": ["news", "talk"],
-  sports: ["sports"],
-  pop: ["pop"],
-  rock: ["rock"],
-  electronic: ["electronic", "dance"],
-  "hip-hop-rnb": ["hip hop", "r&b"],
+  "news-talk": ["news", "talk", "speech"],
+  sports: ["sport", "football", "nfl"],
+  pop: ["pop", "top 40", "hits"],
+  rock: ["rock", "metal", "punk"],
+  electronic: ["electronic", "dance", "techno"],
+  "hip-hop-rnb": ["hip hop", "hiphop", "rap", "r&b", "rnb", "soul"],
   "jazz-blues": ["jazz", "blues"],
-  classical: ["classical"],
+  classical: ["classical", "opera", "baroque"],
   "country-folk": ["country", "folk"],
-  decades: ["oldies", "80s", "90s"],
-  "culture-community": ["culture", "community radio"],
+  decades: ["oldies", "60s", "70s", "80s", "90s", "00s"],
+  "culture-community": ["culture", "community", "local radio", "college radio", "world", "education"],
 };
 
 export const countryLabels: Record<SupportedCountryCode, string> = {
@@ -38,17 +38,17 @@ export const countryLabels: Record<SupportedCountryCode, string> = {
 };
 
 const taxonomy: Array<[Exclude<CategoryId, "all">, RegExp]> = [
-  ["news-talk", /(^|\s)(news|talk|speech|politic(?:al|s)?|current affairs|public radio|local news|local talk)(\s|$)/],
-  ["sports", /(^|\s)(sport(?:s)?|sports talk|football|soccer|nfl|nba|mlb|nhl|cricket|baseball|basketball|hockey|racing)(\s|$)/],
-  ["pop", /(^|\s)(pop|top 40|hits|chart)(\s|$)/],
-  ["rock", /(^|\s)(rock|alternative|metal|punk|grunge)(\s|$)/],
-  ["electronic", /(^|\s)(electronic|dance|house|techno|trance|edm|ambient|synth)(\s|$)/],
-  ["hip-hop-rnb", /(^|\s)(hip hop|hiphop|rap|r&b|rnb|soul|funk)(\s|$)/],
+  ["news-talk", /(^|\s)(news|talk|speech)(\s|$)/],
+  ["sports", /(^|\s)(sport(?:s)?|football|nfl)(\s|$)/],
+  ["pop", /(^|\s)(pop|top 40|hits)(\s|$)/],
+  ["rock", /(^|\s)(rock|metal|punk)(\s|$)/],
+  ["electronic", /(^|\s)(electronic|dance|techno)(\s|$)/],
+  ["hip-hop-rnb", /(^|\s)(hip hop|hiphop|rap|r&b|rnb|soul)(\s|$)/],
   ["jazz-blues", /(^|\s)(jazz|blues)(\s|$)/],
   ["classical", /^(classical|classical music|opera|baroque)$/],
-  ["country-folk", /(^|\s)(country|folk|americana|bluegrass)(\s|$)/],
-  ["decades", /(^|\s)(oldies|classic hits|60s|70s|80s|90s|00s)(\s|$)/],
-  ["culture-community", /(^|\s)(culture|community|local radio|college radio|world|religious|education)(\s|$)/],
+  ["country-folk", /(^|\s)(country|folk)(\s|$)/],
+  ["decades", /(^|\s)(oldies|60s|70s|80s|90s|00s)(\s|$)/],
+  ["culture-community", /(^|\s)(culture|community|local radio|college radio|world|education)(\s|$)/],
 ];
 
 function normalizedTag(tag: string) {

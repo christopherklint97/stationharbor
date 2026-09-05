@@ -57,33 +57,6 @@ function ipv4Parts(address: string) {
   return parts.length === 4 && parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255) ? parts : null;
 }
 
-function mappedIpv4Address(address: string): string | null {
-  const dotted = address.toLowerCase().match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1];
-  if (dotted) return dotted;
-
-  const halves = address.toLowerCase().split("::");
-  if (halves.length > 2) return null;
-  const left = halves[0] ? halves[0].split(":") : [];
-  const right = halves[1] ? halves[1].split(":") : [];
-  const missing = halves.length === 2 ? 8 - left.length - right.length : 0;
-  const groups = [...left, ...Array.from({ length: missing }, () => "0"), ...right];
-  if (groups.length !== 8 || groups.some((group) => !/^[\da-f]{1,4}$/.test(group))) return null;
-  const numbers = groups.map((group) => Number.parseInt(group, 16));
-  if (!numbers.slice(0, 5).every((group) => group === 0) || numbers[5] !== 0xffff) return null;
-  return `${numbers[6]! >> 8}.${numbers[6]! & 0xff}.${numbers[7]! >> 8}.${numbers[7]! & 0xff}`;
-}
-
-function ipv6Groups(address: string): number[] | null {
-  const halves = address.toLowerCase().split("::");
-  if (halves.length > 2) return null;
-  const left = halves[0] ? halves[0].split(":") : [];
-  const right = halves[1] ? halves[1].split(":") : [];
-  const missing = halves.length === 2 ? 8 - left.length - right.length : 0;
-  const groups = [...left, ...Array.from({ length: missing }, () => "0"), ...right];
-  if (groups.length !== 8 || groups.some((group) => !/^[\da-f]{1,4}$/.test(group))) return null;
-  return groups.map((group) => Number.parseInt(group, 16));
-}
-
 export function isPublicAddress(address: string): boolean {
   const version = isIP(address);
   if (version === 4) {
@@ -94,25 +67,14 @@ export function isPublicAddress(address: string): boolean {
     if (a === 169 && b === 254) return false;
     if (a === 172 && b >= 16 && b <= 31) return false;
     if (a === 192 && b === 168) return false;
+    if (a === 192 && b === 88 && c === 99) return false;
     if (a === 198 && (b === 18 || b === 19)) return false;
     if ((a === 192 && b === 0 && (c === 0 || c === 2)) || (a === 198 && b === 51 && c === 100) || (a === 203 && b === 0 && c === 113)) return false;
     return true;
   }
-  if (version === 6) {
-    const normalized = address.toLowerCase();
-    const mapped = mappedIpv4Address(normalized);
-    if (mapped) return isPublicAddress(mapped);
-    const groups = ipv6Groups(normalized);
-    if (!groups) return false;
-    const [first, second, third] = groups;
-    // Only globally routable unicast space is eligible. This excludes loopback,
-    // ULA, link/site-local, multicast, NAT64, and other special-use prefixes.
-    if ((first! & 0xe000) !== 0x2000) return false;
-    if (first === 0x2002) return false; // 6to4 embeds an IPv4 target.
-    if (first === 0x2001 && (second === 0 || (second === 2 && third === 0) || (second! >= 0x10 && second! <= 0x2f) || second === 0xdb8)) return false;
-    if (first === 0x3fff && second! <= 0x0fff) return false; // Documentation prefix.
-    return true;
-  }
+  // Website enrichment deliberately pins only public IPv4. IPv6 special-use
+  // allocation is complex and changes over time, so default-deny it here.
+  if (version === 6) return false;
   return false;
 }
 
@@ -131,9 +93,10 @@ async function validatedPublicHttpsUrl(value: string): Promise<PinnedHttpsTarget
     return { url, address: literalAddress, family: literalFamily as 4 | 6 };
   }
   const addresses = await lookup(url.hostname, { all: true, verbatim: true });
-  if (!addresses.length || addresses.some(({ address }) => !isPublicAddress(address))) throw new Error("Private station website address");
-  const pinned = addresses[0]!;
-  return { url, address: pinned.address, family: pinned.family as 4 | 6 };
+  const ipv4Addresses = addresses.filter((entry) => entry.family === 4);
+  if (!ipv4Addresses.length || ipv4Addresses.some(({ address }) => !isPublicAddress(address))) throw new Error("Private station website address");
+  const pinned = ipv4Addresses[0]!;
+  return { url, address: pinned.address, family: 4 };
 }
 
 function responseHeader(response: IncomingMessage, name: string): string | null {

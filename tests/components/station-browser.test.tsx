@@ -20,6 +20,7 @@ function mockStations(stations: unknown[] = [station]) {
 
 afterEach(() => {
   document.body.style.overflow = "";
+  Reflect.deleteProperty(navigator, "mediaSession");
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -35,6 +36,41 @@ describe("StationBrowser", () => {
     expect(screen.getByText("4 countries")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Play Sveriges Radio P1" })).toBeInTheDocument();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/stations", expect.any(Object)));
+  });
+
+  it("debounces free-text directory searches before upstream fan-out", async () => {
+    const fetchMock = mockStations();
+    render(<StationBrowser />);
+    await screen.findByText("Sveriges Radio P1");
+    vi.useFakeTimers();
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search stations" }), { target: { value: "Dallas" } });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(() => vi.advanceTimersByTimeAsync(349));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(() => vi.advanceTimersByTimeAsync(1));
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(new URL(fetchMock.mock.calls.at(-1)?.[0] as string, "https://stationharbor.test").searchParams.get("q")).toBe("Dallas");
+  });
+
+  it("does not leave loading active when a pending search normalizes to the current query", async () => {
+    const fetchMock = mockStations();
+    render(<StationBrowser />);
+    await screen.findByText("Sveriges Radio P1");
+    vi.useFakeTimers();
+    const search = screen.getByRole("searchbox", { name: "Search stations" });
+
+    fireEvent.change(search, { target: { value: "Dallas" } });
+    fireEvent.change(search, { target: { value: "" } });
+    await act(() => vi.advanceTimersByTimeAsync(350));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+    fireEvent.change(search, { target: { value: "   " } });
+    await act(() => vi.advanceTimersByTimeAsync(350));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("supports multiple countries and a US state drill-down", async () => {
@@ -55,6 +91,37 @@ describe("StationBrowser", () => {
     expect(screen.getByRole("button", { name: "United States" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Denmark" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("United States · California")).toBeInTheDocument();
+  });
+
+  it("restores All countries when the final country chip is removed", async () => {
+    const fetchMock = mockStations();
+    render(<StationBrowser />);
+    await screen.findByText("Sveriges Radio P1");
+
+    fireEvent.click(screen.getByRole("button", { name: "United States" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove United States filter" }));
+
+    expect(screen.getByRole("button", { name: "All countries" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("combobox", { name: "US state" })).not.toBeInTheDocument();
+    await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith("/api/stations", expect.any(Object)));
+  });
+
+  it("keeps the US state control visible when all four countries are individually selected", async () => {
+    mockStations();
+    render(<StationBrowser />);
+    await screen.findByText("Sveriges Radio P1");
+
+    fireEvent.click(screen.getByRole("button", { name: "United States" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "US state" }), { target: { value: "California" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sweden" }));
+    fireEvent.click(screen.getByRole("button", { name: "Denmark" }));
+    fireEvent.click(screen.getByRole("button", { name: "United Kingdom" }));
+
+    expect(screen.getByRole("button", { name: "All countries" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("combobox", { name: "US state" })).toHaveValue("California");
+    fireEvent.click(screen.getByRole("button", { name: "Remove Denmark filter" }));
+    expect(screen.getByRole("button", { name: "Denmark" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("combobox", { name: "US state" })).toHaveValue("California");
   });
 
   it("presents listener-facing categories with News & Talk combined", async () => {
@@ -163,6 +230,107 @@ describe("StationBrowser", () => {
 
     expect(screen.getByRole("button", { name: "Connecting to Sveriges Radio P1" })).toContainElement(document.querySelector(".buffer-spinner"));
     expect(screen.getByText("Connecting to live audio…")).toBeInTheDocument();
+  });
+
+  it("routes Media Session pause and resume through guarded playback attempts", async () => {
+    const handlers: Record<string, (() => void) | null> = {};
+    Object.defineProperty(navigator, "mediaSession", {
+      configurable: true,
+      value: { metadata: null, setActionHandler: (name: string, handler: (() => void) | null) => { handlers[name] = handler; } },
+    });
+    vi.stubGlobal("MediaMetadata", class { constructor(value: unknown) { void value; } });
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+    mockStations();
+    render(<StationBrowser />);
+    fireEvent.click(await screen.findByRole("button", { name: "Play Sveriges Radio P1" }));
+    await screen.findAllByRole("button", { name: "Pause Sveriges Radio P1" });
+
+    await act(async () => { handlers.pause?.(); await Promise.resolve(); });
+    expect(screen.getAllByRole("button", { name: "Resume Sveriges Radio P1" })).toHaveLength(2);
+    await act(async () => { handlers.play?.(); await Promise.resolve(); });
+
+    expect(play).toHaveBeenCalledTimes(2);
+    expect(screen.getAllByRole("button", { name: "Pause Sveriges Radio P1" })).toHaveLength(2);
+  });
+
+  it("does not double-advance sources when play rejects and an error event follows", async () => {
+    let resolveAlternate!: () => void;
+    const alternatePlay = new Promise<void>((resolve) => { resolveAlternate = resolve; });
+    const rejectedStation = {
+      ...station,
+      sources: [
+        station.sources[0],
+        { ...station.sources[0], id: "se-2", streamUrl: "https://radio.example.se/alternate.aac", codec: "AAC" },
+      ],
+      sourceCount: 2,
+    };
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play")
+      .mockRejectedValueOnce(new DOMException("unsupported", "NotSupportedError"))
+      .mockImplementationOnce(() => alternatePlay);
+    mockStations([rejectedStation]);
+    render(<StationBrowser />);
+    await screen.findByText("Sveriges Radio P1");
+    vi.useFakeTimers();
+
+    fireEvent.click(screen.getByRole("button", { name: "Play Sveriges Radio P1" }));
+    await act(async () => { await Promise.resolve(); await vi.advanceTimersByTimeAsync(0); });
+    expect(play).toHaveBeenCalledTimes(2);
+    expect(document.querySelector("audio")?.src).toBe("https://radio.example.se/alternate.aac");
+
+    fireEvent.error(document.querySelector("audio")!);
+    await act(() => vi.advanceTimersByTimeAsync(1_500));
+    expect(play).toHaveBeenCalledTimes(2);
+    await act(async () => { resolveAlternate(); await Promise.resolve(); });
+  });
+
+  it("ignores a late playback rejection after switching stations", async () => {
+    let rejectFirst!: (reason?: unknown) => void;
+    const firstPlay = new Promise<void>((_resolve, reject) => { rejectFirst = reject; });
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play")
+      .mockImplementationOnce(() => firstPlay)
+      .mockResolvedValue();
+    const stationA = {
+      ...station,
+      sources: [
+        station.sources[0],
+        { ...station.sources[0], id: "se-a2", streamUrl: "https://radio.example.se/a-alternate.aac", codec: "AAC" },
+      ],
+      sourceCount: 2,
+    };
+    const stationB = {
+      ...station,
+      id: "se-b",
+      name: "Sveriges Radio P2",
+      streamUrl: "https://radio.example.se/p2.mp3",
+      sources: [{ ...station.sources[0], id: "se-b", streamUrl: "https://radio.example.se/p2.mp3" }],
+    };
+    mockStations([stationA, stationB]);
+    render(<StationBrowser />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Play Sveriges Radio P1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Play Sveriges Radio P2" }));
+    await act(async () => { rejectFirst(new Error("late failure")); await Promise.resolve(); });
+
+    expect(play).toHaveBeenCalledTimes(2);
+    expect(document.querySelector("audio")?.src).toBe("https://radio.example.se/p2.mp3");
+    expect(screen.getByRole("heading", { name: "Sveriges Radio P2" })).toBeInTheDocument();
+  });
+
+  it("does not restart a pending retry after the listener pauses", async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    mockStations();
+    render(<StationBrowser />);
+    fireEvent.click(await screen.findByRole("button", { name: "Play Sveriges Radio P1" }));
+    await screen.findAllByRole("button", { name: "Pause Sveriges Radio P1" });
+    vi.useFakeTimers();
+
+    fireEvent.error(document.querySelector("audio")!);
+    fireEvent.click(screen.getByRole("button", { name: "Connecting to Sveriges Radio P1" }));
+    await act(() => vi.advanceTimersByTimeAsync(1_500));
+
+    expect(play).toHaveBeenCalledOnce();
+    expect(screen.getAllByRole("button", { name: "Resume Sveriges Radio P1" })).toHaveLength(2);
   });
 
   it("stops after one bounded retry across all alternate streams", async () => {

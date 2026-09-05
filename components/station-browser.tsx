@@ -10,6 +10,7 @@ import { INITIAL_COUNTRY_CODES, type Station, type StationSource, type Supported
 
 const INITIAL_VISIBLE_COUNT = 40;
 type WebsiteProfile = { siteName: string | null; description: string | null; homepage: string };
+type PlaybackAttempt = { generation: number; station: Station; sourceIndex: number; handled: boolean };
 
 function PlayIcon() {
   return <svg aria-hidden="true" className="player-control-icon" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z" fill="currentColor" /></svg>;
@@ -65,7 +66,8 @@ function displayLanguage(value: string) {
 export function StationBrowser() {
   const [selectedCountries, setSelectedCountries] = useState<SupportedCountryCode[]>([...INITIAL_COUNTRY_CODES]);
   const [usState, setUsState] = useState("");
-  const [query, setQuery] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [directoryQuery, setDirectoryQuery] = useState("");
   const [stations, setStations] = useState<Station[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [directoryError, setDirectoryError] = useState("");
@@ -94,8 +96,12 @@ export function StationBrowser() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const retryCountRef = useRef(0);
   const sourceIndexRef = useRef(0);
+  const playbackGenerationRef = useRef(0);
+  const activeAttemptRef = useRef<PlaybackAttempt | null>(null);
+  const suppressNextMediaErrorRef = useRef<number | null>(null);
+  const mediaActionsRef = useRef({ play: () => {}, pause: () => {} });
   const retryTimeoutRef = useRef<number | null>(null);
-  const allCountriesSelected = selectedCountries.length === INITIAL_COUNTRY_CODES.length;
+  const allCountriesSelected = selectedCountries.length === INITIAL_COUNTRY_CODES.length && !usState;
 
   const displayedStations = useMemo(() => stations.filter((station) => {
     const stationLanguages = station.language.toLowerCase().split(",").map((value) => value.trim());
@@ -135,93 +141,130 @@ export function StationBrowser() {
     setSecondsLeft(minutes * 60);
   }
 
-  function setAudioSource(station: Station, index: number) {
-    const audio = audioRef.current;
-    const source = stationSources(station)[index];
-    if (!audio || !source) return false;
-    sourceIndexRef.current = index;
-    setSourceIndex(index);
-    audio.src = sourceUrl(source);
-    return true;
+  function cancelPlaybackWork() {
+    playbackGenerationRef.current += 1;
+    activeAttemptRef.current = null;
+    suppressNextMediaErrorRef.current = null;
+    if (retryTimeoutRef.current) {
+      window.clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
   }
 
-  async function playStation(station: Station) {
+  function beginAudioAttempt(station: Station, index: number, generation: number) {
+    const audio = audioRef.current;
+    const source = stationSources(station)[index];
+    if (!audio || !source || generation !== playbackGenerationRef.current) return;
+    const attempt: PlaybackAttempt = { generation, station, sourceIndex: index, handled: false };
+    activeAttemptRef.current = attempt;
+    sourceIndexRef.current = index;
+    setSourceIndex(index);
+    setPlaybackState("buffering");
+    audio.src = sourceUrl(source);
+    void audio.play().then(() => {
+      if (activeAttemptRef.current !== attempt || generation !== playbackGenerationRef.current) return;
+      suppressNextMediaErrorRef.current = null;
+      setIsPlaying(true);
+      setPlaybackState("playing");
+    }).catch(() => {
+      window.setTimeout(() => {
+        if (activeAttemptRef.current !== attempt || attempt.handled || generation !== playbackGenerationRef.current) return;
+        suppressNextMediaErrorRef.current = generation;
+        handleAudioError(attempt);
+      }, 0);
+    });
+  }
+
+  function playStation(station: Station) {
     if (!station.isVerified) {
       setPlayerError(`${station.name}: ${station.availabilityReason ?? "stream unavailable"}.`);
       return;
     }
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (retryTimeoutRef.current) window.clearTimeout(retryTimeoutRef.current);
+    if (!audioRef.current) return;
+    cancelPlaybackWork();
+    const generation = playbackGenerationRef.current;
     retryCountRef.current = 0;
     setPlayerError("");
     setIsPlaying(false);
-    setPlaybackState("buffering");
     setSelectedStation(station);
     setIsPlayerOpen(true);
-    if (!setAudioSource(station, 0)) return;
-    try {
-      await audio.play();
-      setIsPlaying(true);
-      setPlaybackState("playing");
-    } catch {
-      handleAudioError(station);
-    }
+    beginAudioAttempt(station, 0, generation);
+  }
+
+  function pausePlayback() {
+    const audio = audioRef.current;
+    if (!audio) return;
+    cancelPlaybackWork();
+    audio.pause();
+    setIsPlaying(false);
+    setPlaybackState("paused");
+  }
+
+  function resumePlayback(station: Station) {
+    cancelPlaybackWork();
+    const generation = playbackGenerationRef.current;
+    retryCountRef.current = 0;
+    setPlayerError("");
+    beginAudioAttempt(station, sourceIndexRef.current, generation);
   }
 
   function togglePlayback() {
-    const audio = audioRef.current;
-    if (!audio || !selectedStation) return;
-    if (isPlaying) {
-      audio.pause();
-      setIsPlaying(false);
-      setPlaybackState("paused");
+    if (!audioRef.current || !selectedStation) return;
+    if (isPlaying || playbackState === "buffering") {
+      pausePlayback();
       return;
     }
-    retryCountRef.current = 0;
-    setPlaybackState("buffering");
-    void audio.play().then(() => {
-      setIsPlaying(true);
-      setPlaybackState("playing");
-    }).catch(() => handleAudioError(selectedStation));
+    resumePlayback(selectedStation);
   }
 
-  function handleAudioError(stationOverride?: Station) {
-    const audio = audioRef.current;
-    const station = stationOverride ?? selectedStation;
-    if (!audio || !station) return;
-    const sources = stationSources(station);
-    const nextSourceIndex = sourceIndexRef.current + 1;
+  function handleAudioError(attempt: PlaybackAttempt) {
+    if (attempt.handled || activeAttemptRef.current !== attempt || attempt.generation !== playbackGenerationRef.current) return;
+    attempt.handled = true;
+    const sources = stationSources(attempt.station);
+    const nextSourceIndex = attempt.sourceIndex + 1;
     if (nextSourceIndex < sources.length) {
-      setPlaybackState("buffering");
       setPlayerError(`Trying alternate stream ${nextSourceIndex + 1} of ${sources.length}…`);
-      if (setAudioSource(station, nextSourceIndex)) void audio.play().catch(() => handleAudioError(station));
+      beginAudioAttempt(attempt.station, nextSourceIndex, attempt.generation);
       return;
     }
     if (retryCountRef.current < 1) {
       retryCountRef.current += 1;
       setPlaybackState("buffering");
       retryTimeoutRef.current = window.setTimeout(() => {
-        sourceIndexRef.current = -1;
-        handleAudioError(station);
+        retryTimeoutRef.current = null;
+        if (attempt.generation !== playbackGenerationRef.current) return;
+        beginAudioAttempt(attempt.station, 0, attempt.generation);
       }, 1500);
       return;
     }
+    activeAttemptRef.current = null;
     setIsPlaying(false);
     setPlaybackState("error");
-    setPlayerError(`${station.name} stopped. Try again or choose another station.`);
+    setPlayerError(`${attempt.station.name} stopped. Try again or choose another station.`);
+  }
+
+  function currentMediaAttempt(media: HTMLAudioElement): PlaybackAttempt | null {
+    const attempt = activeAttemptRef.current;
+    if (!attempt || attempt.generation !== playbackGenerationRef.current) return null;
+    const source = stationSources(attempt.station)[attempt.sourceIndex];
+    if (!source) return null;
+    const expectedSource = new URL(sourceUrl(source), window.location.href).href;
+    return media.src === expectedSource ? attempt : null;
   }
 
   function toggleCountry(code: SupportedCountryCode) {
     setIsLoading(true);
     setVisibleCount(INITIAL_VISIBLE_COUNT);
     setSelectedCountries((current) => {
-      if (current.length === INITIAL_COUNTRY_CODES.length) {
+      if (allCountriesSelected) {
         if (code !== "US") setUsState("");
         return [code];
       }
       if (current.includes(code)) {
-        if (current.length === 1) return current;
+        if (current.length === 1) {
+          setUsState("");
+          return [...INITIAL_COUNTRY_CODES];
+        }
         if (code === "US") setUsState("");
         return current.filter((country) => country !== code);
       }
@@ -238,15 +281,26 @@ export function StationBrowser() {
     setCodec("all");
     setHlsOnly(false);
     setSort("popular");
-    setQuery("");
+    setSearchInput("");
+    setDirectoryQuery("");
     setVisibleCount(INITIAL_VISIBLE_COUNT);
   }
+
+  useEffect(() => {
+    const normalizedQuery = searchInput.trim();
+    if (normalizedQuery === directoryQuery) return;
+    const timer = window.setTimeout(() => {
+      setIsLoading(true);
+      setDirectoryQuery(normalizedQuery);
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [searchInput, directoryQuery]);
 
   useEffect(() => {
     const controller = new AbortController();
     const params = new URLSearchParams();
     if (selectedCountries.length !== INITIAL_COUNTRY_CODES.length) params.set("countries", selectedCountries.join(","));
-    if (query.trim()) params.set("q", query.trim());
+    if (directoryQuery) params.set("q", directoryQuery);
     if (category !== "all") params.set("category", category);
     if (usState && selectedCountries.includes("US")) params.set("state", usState);
     const endpoint = params.size ? `/api/stations?${params}` : "/api/stations";
@@ -267,7 +321,7 @@ export function StationBrowser() {
       .finally(() => { if (!controller.signal.aborted) setIsLoading(false); });
 
     return () => controller.abort();
-  }, [selectedCountries, usState, query, category]);
+  }, [selectedCountries, usState, directoryQuery, category]);
 
   useEffect(() => {
     if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js");
@@ -279,6 +333,12 @@ export function StationBrowser() {
       const next = Math.max(0, Math.ceil((sleepDeadline - new Date().getTime()) / 1000));
       setSecondsLeft(next);
       if (next === 0) {
+        playbackGenerationRef.current += 1;
+        activeAttemptRef.current = null;
+        if (retryTimeoutRef.current) {
+          window.clearTimeout(retryTimeoutRef.current);
+          retryTimeoutRef.current = null;
+        }
         audioRef.current?.pause();
         setIsPlaying(false);
         setPlaybackState("paused");
@@ -303,28 +363,38 @@ export function StationBrowser() {
   }, [isPlayerOpen, detailStation]);
 
   useEffect(() => {
+    mediaActionsRef.current = {
+      play: () => { if (selectedStation) resumePlayback(selectedStation); },
+      pause: pausePlayback,
+    };
+  });
+
+  useEffect(() => {
     if (!selectedStation) return;
     document.title = `${selectedStation.name} — StationHarbor`;
     if (!("mediaSession" in navigator)) return;
-    navigator.mediaSession.metadata = new MediaMetadata({
+    const mediaSession = navigator.mediaSession;
+    mediaSession.metadata = new MediaMetadata({
       title: selectedStation.name,
       artist: stationKnownFor(selectedStation),
       album: "StationHarbor live radio",
       artwork: selectedStation.favicon ? [{ src: selectedStation.favicon }] : [],
     });
-    navigator.mediaSession.setActionHandler("play", () => { void audioRef.current?.play(); });
-    navigator.mediaSession.setActionHandler("pause", () => {
-      audioRef.current?.pause();
-      setIsPlaying(false);
-      setPlaybackState("paused");
-    });
+    mediaSession.setActionHandler("play", () => mediaActionsRef.current.play());
+    mediaSession.setActionHandler("pause", () => mediaActionsRef.current.pause());
+    return () => {
+      mediaSession.setActionHandler("play", null);
+      mediaSession.setActionHandler("pause", null);
+    };
   }, [selectedStation]);
 
   useEffect(() => () => {
+    playbackGenerationRef.current += 1;
+    activeAttemptRef.current = null;
     if (retryTimeoutRef.current) window.clearTimeout(retryTimeoutRef.current);
   }, []);
 
-  const activeFilterCount = Number(!allCountriesSelected) + Number(Boolean(usState)) + Number(category !== "all") + Number(language !== "all") + Number(codec !== "all") + Number(hlsOnly) + Number(sort !== "popular") + Number(Boolean(query));
+  const activeFilterCount = Number(!allCountriesSelected) + Number(Boolean(usState)) + Number(category !== "all") + Number(language !== "all") + Number(codec !== "all") + Number(hlsOnly) + Number(sort !== "popular") + Number(Boolean(searchInput));
   const advancedFilterCount = Number(language !== "all") + Number(codec !== "all") + Number(hlsOnly) + Number(sort !== "popular");
   const currentSource = selectedStation ? stationSources(selectedStation)[sourceIndex] : null;
   const detailWebsiteProfile = detailStation ? websiteProfiles[detailStation.id] : null;
@@ -335,7 +405,7 @@ export function StationBrowser() {
       <div className="filter-panel">
         <div className="search-row">
           <label className="search-label" htmlFor="station-search">Search stations</label>
-          <div className="search-control"><Search aria-hidden="true" size={20} /><input id="station-search" className="search-input" type="search" value={query} onChange={(event) => { setIsLoading(true); setQuery(event.target.value); }} placeholder="Station, city or team" /></div>
+          <div className="search-control"><Search aria-hidden="true" size={20} /><input id="station-search" className="search-input" type="search" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Station, city or team" /></div>
         </div>
 
         <fieldset className="filter-group">
@@ -418,7 +488,35 @@ export function StationBrowser() {
         {displayedStations.length > visibleCount && <button className="load-more" type="button" onClick={() => setVisibleCount((count) => count + INITIAL_VISIBLE_COUNT)}>Show {Math.min(INITIAL_VISIBLE_COUNT, displayedStations.length - visibleCount)} more <span>{visibleCount} of {displayedStations.length} shown</span></button>}
       </div>
 
-      <audio ref={audioRef} preload="none" playsInline onError={() => handleAudioError()} onPause={() => { setIsPlaying(false); setPlaybackState("paused"); }} onPlay={() => { setPlayerError(""); setIsPlaying(true); setPlaybackState("playing"); }} onStalled={() => setPlaybackState("buffering")} onWaiting={() => setPlaybackState("buffering")} />
+      <audio
+        ref={audioRef}
+        preload="none"
+        playsInline
+        onError={(event) => {
+          const attempt = currentMediaAttempt(event.currentTarget);
+          if (!attempt) return;
+          if (suppressNextMediaErrorRef.current === attempt.generation) {
+            suppressNextMediaErrorRef.current = null;
+            return;
+          }
+          handleAudioError(attempt);
+        }}
+        onPause={(event) => {
+          if (!currentMediaAttempt(event.currentTarget) || !event.currentTarget.paused) return;
+          setIsPlaying(false);
+          setPlaybackState("paused");
+        }}
+        onPlay={(event) => {
+          const attempt = currentMediaAttempt(event.currentTarget);
+          if (!attempt) return;
+          suppressNextMediaErrorRef.current = null;
+          setPlayerError("");
+          setIsPlaying(true);
+          setPlaybackState("playing");
+        }}
+        onStalled={(event) => { if (currentMediaAttempt(event.currentTarget)) setPlaybackState("buffering"); }}
+        onWaiting={(event) => { if (currentMediaAttempt(event.currentTarget)) setPlaybackState("buffering"); }}
+      />
 
       {detailStation && <div className="dialog-backdrop"><section className="details-sheet" role="dialog" aria-modal="true" aria-label="Station details">
         <button className="dialog-close" type="button" aria-label="Close station details" onClick={() => setDetailStation(null)}><X aria-hidden="true" /></button>
