@@ -180,8 +180,14 @@ export function StationBrowser() {
       setPlayerError(`${station.name}: ${station.availabilityReason ?? "stream unavailable"}.`);
       return;
     }
-    if (!audioRef.current) return;
+    const audio = audioRef.current;
+    if (!audio) return;
     cancelPlaybackWork();
+    if (audio.getAttribute("src")) {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    }
     const generation = playbackGenerationRef.current;
     retryCountRef.current = 0;
     setPlayerError("");

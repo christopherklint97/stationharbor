@@ -301,6 +301,40 @@ describe("StationBrowser", () => {
     await act(async () => { resolveAlternate(); await Promise.resolve(); });
   });
 
+  it("stops and unloads the previous station before starting a new one", async () => {
+    const events: string[] = [];
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(function (this: HTMLMediaElement) {
+      events.push(`play:${this.src}`);
+      return Promise.resolve();
+    });
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(function (this: HTMLMediaElement) {
+      events.push(`pause:${this.src}`);
+    });
+    vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(function (this: HTMLMediaElement) {
+      events.push(`load:${this.getAttribute("src") ?? "none"}`);
+    });
+    const stationB = {
+      ...station,
+      id: "se-b",
+      name: "Sveriges Radio P2",
+      streamUrl: "https://radio.example.se/p2.mp3",
+      sources: [{ ...station.sources[0], id: "se-b", streamUrl: "https://radio.example.se/p2.mp3" }],
+    };
+    mockStations([station, stationB]);
+    render(<StationBrowser />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Play Sveriges Radio P1" }));
+    await screen.findAllByRole("button", { name: "Pause Sveriges Radio P1" });
+    events.length = 0;
+    fireEvent.click(screen.getByRole("button", { name: "Play Sveriges Radio P2" }));
+
+    expect(events).toEqual([
+      "pause:https://radio.example.se/live.mp3",
+      "load:none",
+      "play:https://radio.example.se/p2.mp3",
+    ]);
+  });
+
   it("ignores a late playback rejection after switching stations", async () => {
     let rejectFirst!: (reason?: unknown) => void;
     const firstPlay = new Promise<void>((_resolve, reject) => { rejectFirst = reject; });
