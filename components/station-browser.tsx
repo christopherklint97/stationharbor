@@ -514,6 +514,14 @@ export function StationBrowser() {
           setIsPlaying(true);
           setPlaybackState("playing");
         }}
+        onPlaying={(event) => {
+          const attempt = currentMediaAttempt(event.currentTarget);
+          if (!attempt) return;
+          suppressNextMediaErrorRef.current = null;
+          setPlayerError("");
+          setIsPlaying(true);
+          setPlaybackState("playing");
+        }}
         onStalled={(event) => { if (currentMediaAttempt(event.currentTarget)) setPlaybackState("buffering"); }}
         onWaiting={(event) => { if (currentMediaAttempt(event.currentTarget)) setPlaybackState("buffering"); }}
       />

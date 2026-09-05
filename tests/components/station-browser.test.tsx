@@ -232,6 +232,23 @@ describe("StationBrowser", () => {
     expect(screen.getByText("Connecting to live audio…")).toBeInTheDocument();
   });
 
+  it("returns to playing after live audio resumes from buffering", async () => {
+    mockStations();
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    render(<StationBrowser />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Play Sveriges Radio P1" }));
+    await screen.findAllByRole("button", { name: "Pause Sveriges Radio P1" });
+    const audio = document.querySelector("audio")!;
+    fireEvent.waiting(audio);
+    expect(screen.getByText("Connecting to live audio…")).toBeInTheDocument();
+
+    fireEvent.playing(audio);
+
+    expect(screen.getByText("Playing live")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Pause Sveriges Radio P1" })).toHaveLength(2);
+  });
+
   it("routes Media Session pause and resume through guarded playback attempts", async () => {
     const handlers: Record<string, (() => void) | null> = {};
     Object.defineProperty(navigator, "mediaSession", {
