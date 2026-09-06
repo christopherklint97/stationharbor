@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   try {
     const url = assertRelayUrl(source);
     const upstream = await fetch(url, {
-      headers: { "User-Agent": "StationHarbor local relay/0.1", "Icy-MetaData": "1" },
+      headers: { "User-Agent": "StationHarbor local relay/0.1" },
       redirect: "follow",
     });
     if (!upstream.ok || !upstream.body) return new Response("Upstream stream unavailable", { status: 502 });
