@@ -528,6 +528,13 @@ export function StationBrowser() {
           setIsPlaying(true);
           setPlaybackState("playing");
         }}
+        onTimeUpdate={(event) => {
+          if (event.currentTarget.paused || !currentMediaAttempt(event.currentTarget)) return;
+          suppressNextMediaErrorRef.current = null;
+          setPlayerError("");
+          setIsPlaying(true);
+          setPlaybackState("playing");
+        }}
         onStalled={(event) => { if (currentMediaAttempt(event.currentTarget)) setPlaybackState("buffering"); }}
         onWaiting={(event) => { if (currentMediaAttempt(event.currentTarget)) setPlaybackState("buffering"); }}
       />
