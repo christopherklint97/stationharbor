@@ -1,5 +1,15 @@
 services:
   stationharbor:
+    # Host capacity guardrails (16 September 2026 incident).
+    cpus: "1.0"
+    mem_limit: 768m
+    memswap_limit: 1024m
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     build:
       context: .
       dockerfile: Dockerfile
